@@ -1,0 +1,9 @@
+# backend/requirements.txt
+fastapi
+uvicorn
+openai>=1.6.1
+faiss-cpu
+python-dotenv
+gitpython
+scikit-learn
+numpy

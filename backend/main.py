@@ -47,11 +47,22 @@ async def chat(request: ChatRequest):
     project = request.project
     messages = [msg.dict(exclude_none=True) for msg in request.messages]
 
-    # Prepend a system message for context with the project name
+    # Combine user messages content for context retrieval
+    user_text = " ".join(msg["content"] for msg in messages if msg["role"] == "user")
+
+    # Retrieve relevant code chunks for user's input
+    relevant_code = get_relevant_chunks(user_text, top_k=5)
+
+    # Prepend a system message with project info and relevant code snippets
     system_message = {
         "role": "system",
-        "content": f"You are a coding assistant helping with the {project} project."
+        "content": (
+            f"You are a coding assistant helping with the {project} project.\n\n"
+            "Use the following code snippets as context:\n"
+            f"{relevant_code}"
+        )
     }
+
     full_messages = [system_message] + messages
 
     # Call Azure OpenAI chat completion

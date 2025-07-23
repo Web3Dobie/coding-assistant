@@ -10,6 +10,7 @@ def sync_repos(repo_list: List[dict]):
     repo_list = [
         {"name": "X-Agent", "url": "https://github.com/Web3Dobie/X-AI-Agent.git"},
         {"name": "DutchBrat-Website", "url": "https://github.com/Web3Dobie/dutchbrat.com.git"},
+        {"name": "Coding-Assistant", "url": "https://github.com/Web3Dobie/coding-assistant.git"},
         {"name": "Hedgefund-Agent", "url": "https://github.com/Web3Dobie/HedgeFundAgent.git"}
     ]
     """
@@ -34,6 +35,7 @@ if __name__ == "__main__":
     repositories = [
         {"name": "X-Agent", "url": "https://github.com/Web3Dobie/X-AI-Agent.git"},
         {"name": "DutchBrat-Website", "url": "https://github.com/Web3Dobie/dutchbrat.com.git"},
+        {"name": "Coding-Assistant", "url": "https://github.com/Web3Dobie/coding-assistant.git"},
         {"name": "Hedgefund-Agent", "url": "https://github.com/Web3Dobie/HedgeFundAgent.git"}
     ]
     sync_repos(repositories)

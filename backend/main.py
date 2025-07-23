@@ -90,6 +90,7 @@ async def reindex():
         repos = [
             {"name": "X-Agent", "url": "https://github.com/youruser/X-Agent.git"},
             {"name": "DutchBrat-Website", "url": "https://github.com/youruser/DutchBrat-Website.git"},
+            {"name": "Coding-Assistant", "url": "https://github.com/Web3Dobie/coding-assistant.git"},
             {"name": "Hedgefund-Agent", "url": "https://github.com/youruser/Hedgefund-Agent.git"}
         ]
         github_sync.sync_repos(repos)

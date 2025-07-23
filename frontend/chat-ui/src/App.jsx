@@ -68,9 +68,19 @@ export default function App() {
   return (
     <div className="h-screen w-screen bg-gray-50 flex items-center justify-center">
       <div className="w-full max-w-2xl h-[90vh] flex flex-col border rounded-xl shadow bg-white overflow-hidden">
-        {/* Header */}
-        <header className="p-4 border-b text-center text-lg font-semibold bg-gray-100">
-          💬 Chat Coding Assistant
+        {/* Header with Project Selector */}
+        <header className="p-4 border-b text-center bg-gray-100 flex items-center justify-between">
+          <h1 className="text-lg font-semibold">💬 Chat Coding Assistant</h1>
+          <select
+            value={project}
+            onChange={(e) => setProject(e.target.value)}
+            className="border border-gray-300 rounded px-2 py-1 text-sm"
+          >
+            <option value="X-Agent">X-Agent</option>
+            <option value="DutchBrat-Website">DutchBrat-Website</option>
+            <option value="Coding-Assistant">Coding-Assistant</option>
+            <option value="Hedgefund-Agent">Hedgefund-Agent</option>
+          </select>
         </header>
 
         {/* Message List */}

@@ -1,5 +1,5 @@
 # Logs
-logs
+logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -7,15 +7,15 @@ yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
-node_modules
-dist
-dist-ssr
+# Node
+node_modules/
+dist/
+dist-ssr/
 *.local
 
 # Editor directories and files
-.vscode/*
-!.vscode/extensions.json
-.idea
+.vscode/
+.idea/
 .DS_Store
 *.suo
 *.ntvs*
@@ -27,15 +27,14 @@ dist-ssr
 backend/venv/
 backend/__pycache__/
 backend/*.pyc
+backend/vector_store.faiss
+backend/vector_meta.pkl
 
-# Node
+# Frontend node_modules
 frontend/chat-ui/node_modules/
 
-# IDEs
-.vscode/
-.DS_Store
-EOL
-
+# Environment files
 *.env
 
+# Cloned repos
 data/repo_clones/

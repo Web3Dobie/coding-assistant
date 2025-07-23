@@ -3,7 +3,7 @@ import os
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
@@ -13,13 +13,14 @@ from datetime import datetime
 import embed
 import github_sync
 import index_codebase
+from embed import get_relevant_chunks
 
 app = FastAPI()
 
 # CORS setup
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=["http://127.0.0.1:5174"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -44,56 +45,69 @@ class ChatRequest(BaseModel):
 
 @app.post("/chat")
 async def chat(request: ChatRequest):
-    project = request.project
-    messages = [msg.dict(exclude_none=True) for msg in request.messages]
-
-    # Combine user messages content for context retrieval
-    user_text = " ".join(msg["content"] for msg in messages if msg["role"] == "user")
-
-    # Retrieve relevant code chunks for user's input
-    relevant_code = get_relevant_chunks(user_text, top_k=5)
-
-    # Prepend a system message with project info and relevant code snippets
-    system_message = {
-        "role": "system",
-        "content": (
-            f"You are a coding assistant helping with the {project} project.\n\n"
-            "Use the following code snippets as context:\n"
-            f"{relevant_code}"
-        )
-    }
-
-    full_messages = [system_message] + messages
-
-    # Call Azure OpenAI chat completion
-    response = client.chat.completions.create(
-        model=os.getenv("AZURE_DEPLOYMENT_ID"),
-        messages=full_messages,
-        temperature=0.3
-    )
-    assistant_reply = response.choices[0].message.content
-
-    # Log interaction to JSON file
-    log_entry = {
-        "timestamp": datetime.utcnow().isoformat() + "Z",
-        "project": project,
-        "user_messages": messages,
-        "assistant_reply": assistant_reply
-    }
-    log_path = os.path.join(os.path.dirname(__file__), "chat_log.json")
     try:
-        if os.path.exists(log_path):
-            with open(log_path, "r", encoding="utf-8") as f:
-                chat_log = json.load(f)
-        else:
-            chat_log = []
-        chat_log.append(log_entry)
-        with open(log_path, "w", encoding="utf-8") as f:
-            json.dump(chat_log, f, indent=2)
-    except Exception as e:
-        print(f"Failed to write chat log: {e}")
+        project = request.project
+        messages = [msg.dict(exclude_none=True) for msg in request.messages]
 
-    return {"response": assistant_reply}
+        print(f"[Chat] Received project: {project}")
+        print(f"[Chat] Received messages: {messages}")
+
+        # Combine user messages content for context retrieval
+        user_text = " ".join(msg["content"] for msg in messages if msg["role"] == "user")
+
+        relevant_code = get_relevant_chunks(user_text, top_k=5)
+        print(f"[Chat] Relevant code snippet (truncated): {relevant_code[:300]}")
+
+        system_message = {
+            "role": "system",
+            "content": (
+                f"You are a coding assistant helping with the {project} project.\n\n"
+                "Use the following code snippets as context:\n"
+                f"{relevant_code}"
+            )
+        }
+
+        full_messages = [system_message] + messages
+
+        # Call Azure OpenAI chat completion
+        try:
+            response = client.chat.completions.create(
+                model=os.getenv("AZURE_DEPLOYMENT_ID"),
+                messages=full_messages,
+                temperature=0.3,
+            )
+            assistant_reply = response.choices[0].message.content
+            print(f"[Chat] Assistant reply: {assistant_reply[:300]}")
+        except Exception as e:
+            print(f"[Chat] OpenAI API error: {e}")
+            assistant_reply = "⚠️ Sorry, I couldn't process your request."
+
+        # Log interaction
+        log_entry = {
+            "timestamp": datetime.utcnow().isoformat() + "Z",
+            "project": project,
+            "user_messages": messages,
+            "assistant_reply": assistant_reply,
+        }
+        log_path = os.path.join(os.path.dirname(__file__), "chat_log.json")
+        try:
+            if os.path.exists(log_path):
+                with open(log_path, "r", encoding="utf-8") as f:
+                    chat_log = json.load(f)
+            else:
+                chat_log = []
+            chat_log.append(log_entry)
+            with open(log_path, "w", encoding="utf-8") as f:
+                json.dump(chat_log, f, indent=2)
+            print("[Chat] Logged chat interaction.")
+        except Exception as e:
+            print(f"[Chat] Failed to write chat log: {e}")
+
+        return {"response": assistant_reply}
+
+    except Exception as e:
+        print(f"[Chat] Unexpected error: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 @app.post("/reindex")
 async def reindex():

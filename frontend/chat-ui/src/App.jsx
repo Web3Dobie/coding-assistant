@@ -9,7 +9,7 @@ export default function App() {
 
   const textareaRef = useRef(null);
   const messagesEndRef = useRef(null);
-  const API_BASE_URL = process.env.VITE_API_BASE_URL || "http://localhost:8000";
+  const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
   const getTimestamp = () =>
     new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });

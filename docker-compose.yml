@@ -1,3 +1,5 @@
+version: '3.8'
+
 services:
   backend:
     build:
@@ -5,33 +7,43 @@ services:
       dockerfile: Dockerfile
     ports:
       - "8000:8000"
+    env_file:
+      - .env
     volumes:
+      # For development: mount source code for hot reload
       - ./backend:/app
-      - ./data:/app/data # Mount the `data` directory into the container
-
-    environment:
-      - AZURE_OPENAI_API_KEY=EHwk8O3s84oDgLnCyssWpxHmWI8eKoSHdRwoMnXPG882b9Z5mTzlJQQJ99BGACfhMk5XJ3w3AAAAACOGz1cz
-      - AZURE_RESOURCE_NAME=dutchbrat-resource
-      - AZURE_DEPLOYMENT_ID=gpt-4o
-      - AZURE_API_VERSION=2025-01-01-preview
-      - AZURE_EMBEDDING_DEPLOYMENT_ID=ada-embedding
-      - REPO_BASE_PATH=/app/data/repo_clones
-
+      # For data persistence
+      - ./data:/app/data
+      # For logs (create the file first if it doesn't exist)
+      - ./backend/chat_log.json:/app/chat_log.json
     networks:
       - coding-assistant-network
+    restart: unless-stopped
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8000/health" ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   frontend:
     build:
       context: ./frontend/chat-ui
       dockerfile: Dockerfile
     ports:
-      - "5174:5174"
-    volumes:
-      - ./frontend/chat-ui:/app
+      - "5174:80" # ← FIXED: Nginx runs on port 80 inside container
+    depends_on:
+      backend:
+        condition: service_healthy # Wait for backend to be healthy
+    # Remove volume mount for production builds
+    # volumes:
+    #   - ./frontend/chat-ui:/app  # ← REMOVE this for production
     networks:
       - coding-assistant-network
     environment:
-      - VITE_API_BASE_URL=http://backend:8000
+      # Frontend doesn't need the Azure secrets
+      - NODE_ENV=production
+    restart: unless-stopped
 
 networks:
   coding-assistant-network:

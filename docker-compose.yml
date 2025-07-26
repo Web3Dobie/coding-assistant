@@ -1,0 +1,38 @@
+services:
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./backend:/app
+      - ./data:/app/data # Mount the `data` directory into the container
+
+    environment:
+      - AZURE_OPENAI_API_KEY=EHwk8O3s84oDgLnCyssWpxHmWI8eKoSHdRwoMnXPG882b9Z5mTzlJQQJ99BGACfhMk5XJ3w3AAAAACOGz1cz
+      - AZURE_RESOURCE_NAME=dutchbrat-resource
+      - AZURE_DEPLOYMENT_ID=gpt-4o
+      - AZURE_API_VERSION=2025-01-01-preview
+      - AZURE_EMBEDDING_DEPLOYMENT_ID=ada-embedding
+      - REPO_BASE_PATH=/app/data/repo_clones
+
+    networks:
+      - coding-assistant-network
+
+  frontend:
+    build:
+      context: ./frontend/chat-ui
+      dockerfile: Dockerfile
+    ports:
+      - "5174:5174"
+    volumes:
+      - ./frontend/chat-ui:/app
+    networks:
+      - coding-assistant-network
+    environment:
+      - VITE_API_BASE_URL=http://backend:8000
+
+networks:
+  coding-assistant-network:
+    driver: bridge

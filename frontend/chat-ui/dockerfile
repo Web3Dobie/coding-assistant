@@ -1,0 +1,21 @@
+# Use an official Node.js base image
+FROM node:18-alpine
+
+# Set the working directory in the container
+WORKDIR /app
+
+# Copy the package.json and install dependencies
+COPY package.json package-lock.json ./
+RUN npm install
+
+# Copy the rest of the frontend code
+COPY . .
+
+# Build the frontend
+RUN npm run build
+
+# Expose the port the frontend runs on
+EXPOSE 5174
+
+# Command to serve the built frontend using Vite
+CMD ["npm", "run", "preview"]

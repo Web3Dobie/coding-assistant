@@ -9,9 +9,62 @@ export default function App() {
 
   const textareaRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const API_BASE_URL = process.env.VITE_API_BASE_URL || "http://localhost:8000";
 
   const getTimestamp = () =>
     new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+
+  const onCommand = async (command) => {
+    try {
+      if (command.startsWith("/get-file")) {
+        const [, filePath] = command.split(" ");
+        const response = await fetch(`${API_BASE_URL}/get-file`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ file_path: `/app/data/${filePath}` }), // Adjust path for container
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          setMessages([...messages, { role: "system", content: `Error: ${error.detail}` }]);
+        } else {
+          const fileContent = await response.text();
+
+          const openAIResponse = await fetch(`${API_BASE_URL}/chat`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              project: "Your Project Name",
+              messages: [
+                { role: "system", content: `You are a coding assistant. Use the following file content for context:\n\n${fileContent}` },
+                { role: "user", content: "Please analyze this file." },
+              ],
+            }),
+          });
+
+          const openAIResult = await openAIResponse.json();
+          setMessages([...messages, { role: "assistant", content: openAIResult.response }]);
+        }
+      } else if (command.startsWith("/list-files")) {
+        const [, repoName] = command.split(" ");
+        const response = await fetch(`${API_BASE_URL}/list-files?repo_name=${repoName}`);
+
+        if (!response.ok) {
+          const error = await response.json();
+          setMessages([...messages, { role: "system", content: `Error: ${error.detail}` }]);
+        } else {
+          const data = await response.json();
+          const fileList = data.files.join("\n");
+          setMessages([...messages, { role: "system", content: `Files in ${repoName}:\n${fileList}` }]);
+        }
+      } else {
+        setMessages([...messages, { role: "system", content: `Unknown command: ${command}` }]);
+      }
+    } catch (error) {
+      setMessages([...messages, { role: "system", content: `Error executing command: ${error.message}` }]);
+    }
+    setInput("");
+  };
 
   // Auto-resize textarea up to 10 lines (240px assuming 24px line height)
   useEffect(() => {
@@ -36,32 +89,37 @@ export default function App() {
     e.preventDefault();
     if (!input.trim()) return;
 
-    const userMessage = {
-      role: "user",
-      content: input.trim(),
-      timestamp: getTimestamp(),
-    };
-    const newMessages = [...messages, userMessage];
-    setMessages(newMessages);
-    setInput("");
+    if (input.startsWith("/")) {
+      await onCommand(input.trim()); // Trigger onCommand for commands
+    } else {
 
-    try {
-      const assistantReply = await sendMessage(project, newMessages);
-      const assistantMessage = {
-        role: "assistant",
-        content: assistantReply,
+      const userMessage = {
+        role: "user",
+        content: input.trim(),
         timestamp: getTimestamp(),
       };
-      setMessages([...newMessages, assistantMessage]);
-    } catch (error) {
-      setMessages([
-        ...newMessages,
-        {
-          role: "system",
-          content: "⚠️ Error: Unable to reach backend.",
+      const newMessages = [...messages, userMessage];
+      setMessages(newMessages);
+      setInput("");
+
+      try {
+        const assistantReply = await sendMessage(project, newMessages);
+        const assistantMessage = {
+          role: "assistant",
+          content: assistantReply,
           timestamp: getTimestamp(),
-        },
-      ]);
+        };
+        setMessages([...newMessages, assistantMessage]);
+      } catch (error) {
+        setMessages([
+          ...newMessages,
+          {
+            role: "system",
+            content: "⚠️ Error: Unable to reach backend.",
+            timestamp: getTimestamp(),
+          },
+        ]);
+      }
     }
   };
 

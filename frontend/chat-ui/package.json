@@ -7,7 +7,7 @@
     "dev": "cross-env VITE_DEV_PORT=5174 vite --port 5174",
     "build": "vite build",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview --host 0.0.0.0 --port 5174"
   },
   "dependencies": {
     "react": "^19.1.0",

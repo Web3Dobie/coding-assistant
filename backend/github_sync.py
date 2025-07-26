@@ -11,7 +11,8 @@ def sync_repos(repo_list: List[dict]):
         {"name": "X-Agent", "url": "https://github.com/Web3Dobie/X-AI-Agent.git"},
         {"name": "DutchBrat-Website", "url": "https://github.com/Web3Dobie/dutchbrat.com.git"},
         {"name": "Coding-Assistant", "url": "https://github.com/Web3Dobie/coding-assistant.git"},
-        {"name": "Hedgefund-Agent", "url": "https://github.com/Web3Dobie/HedgeFundAgent.git"}
+        {"name": "Hedgefund-Agent", "url": "https://github.com/Web3Dobie/HedgeFundAgent.git"},
+        {"name": "Trading-Bot", "url": "https://github.com/youruser/trading-bot.git"}
     ]
     """
     os.makedirs(REPO_BASE_PATH, exist_ok=True)
@@ -36,6 +37,7 @@ if __name__ == "__main__":
         {"name": "X-Agent", "url": "https://github.com/Web3Dobie/X-AI-Agent.git"},
         {"name": "DutchBrat-Website", "url": "https://github.com/Web3Dobie/dutchbrat.com.git"},
         {"name": "Coding-Assistant", "url": "https://github.com/Web3Dobie/coding-assistant.git"},
-        {"name": "Hedgefund-Agent", "url": "https://github.com/Web3Dobie/HedgeFundAgent.git"}
+        {"name": "Hedgefund-Agent", "url": "https://github.com/Web3Dobie/HedgeFundAgent.git"},
+        {"name": "Trading-Bot", "url": "https://github.com/youruser/trading-bot.git"}
     ]
     sync_repos(repositories)

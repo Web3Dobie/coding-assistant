@@ -1,11 +1,9 @@
-# .github/workflows/simple-deploy.yml
-# Simplified version - easier to set up and debug
-
-name: Simple Deploy
+# .github/workflows/deploy.yml
+name: Deploy to Azure Container Apps
 
 on:
   push:
-    branches: [ main ]
+    branches: [ main, master ]  # Added master as fallback
   workflow_dispatch:  # Allow manual triggering
 
 jobs:
@@ -13,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout
+    - name: Checkout code
       uses: actions/checkout@v4
 
     - name: Azure Login
@@ -27,14 +25,17 @@ jobs:
         az acr login --name codingassistantacr9247
         
         # Build and push backend
+        docker build -t codingassistantacr9247.azurecr.io/coding-assistant-backend:${{ github.sha }} ./backend
         docker build -t codingassistantacr9247.azurecr.io/coding-assistant-backend:latest ./backend
+        
+        docker push codingassistantacr9247.azurecr.io/coding-assistant-backend:${{ github.sha }}
         docker push codingassistantacr9247.azurecr.io/coding-assistant-backend:latest
         
         # Update container app
         az containerapp update \
           --name coding-assistant-backend \
           --resource-group Web3Dobie \
-          --image codingassistantacr9247.azurecr.io/coding-assistant-backend:latest
+          --image codingassistantacr9247.azurecr.io/coding-assistant-backend:${{ github.sha }}
 
     - name: Build and Deploy Frontend  
       run: |
@@ -45,14 +46,17 @@ jobs:
         echo "VITE_API_BASE_URL=https://coding-assistant-backend.ambitiouspebble-f6886645.swedencentral.azurecontainerapps.io" > .env
         
         # Build and push
+        docker build -t codingassistantacr9247.azurecr.io/coding-assistant-frontend:${{ github.sha }} .
         docker build -t codingassistantacr9247.azurecr.io/coding-assistant-frontend:latest .
+        
+        docker push codingassistantacr9247.azurecr.io/coding-assistant-frontend:${{ github.sha }}
         docker push codingassistantacr9247.azurecr.io/coding-assistant-frontend:latest
         
         # Update container app
         az containerapp update \
           --name coding-assistant-frontend \
           --resource-group Web3Dobie \
-          --image codingassistantacr9247.azurecr.io/coding-assistant-frontend:latest
+          --image codingassistantacr9247.azurecr.io/coding-assistant-frontend:${{ github.sha }}
 
     - name: Verify Deployment
       run: |
@@ -61,3 +65,7 @@ jobs:
         
         # Test backend health
         curl -f https://coding-assistant-backend.ambitiouspebble-f6886645.swedencentral.azurecontainerapps.io/health || echo "Backend health check failed"
+        
+        # Print deployment info
+        echo "Deployed backend image: codingassistantacr9247.azurecr.io/coding-assistant-backend:${{ github.sha }}"
+        echo "Deployed frontend image: codingassistantacr9247.azurecr.io/coding-assistant-frontend:${{ github.sha }}"

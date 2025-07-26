@@ -38,3 +38,5 @@ frontend/chat-ui/node_modules/
 
 # Cloned repos
 data/repo_clones/
+.env
+frontend/chat-ui/.env

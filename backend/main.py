@@ -22,9 +22,16 @@ from chat_service import ChatService
 from sqlalchemy.ext.asyncio import AsyncSession
 from dotenv import load_dotenv
 
-# Load environment variables from project root
-env_path = Path(__file__).parent.parent / ".env"
-load_dotenv(env_path)
+# Try multiple .env locations
+env_paths = [
+    Path(__file__).parent / ".env",  # Same directory
+    Path(__file__).parent.parent / ".env",  # Parent directory
+]
+
+for env_path in env_paths:
+    if env_path.exists():
+        load_dotenv(env_path)
+        break
 
 # Validate required environment variables
 REQUIRED_ENV_VARS = [
@@ -51,7 +58,7 @@ ALLOWED_ORIGINS = os.getenv("ALLOWED_ORIGINS", "http://localhost:5174,http://127
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=ALLOWED_ORIGINS,
+    allow_origins=["https://coding-assistant-frontend.ambitiouspebble-f6886645.swedencentral.azurecontainerapps.io"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -253,6 +260,7 @@ async def reindex(background_tasks: BackgroundTasks):
     except Exception as e:
         print(f"[Reindex] Error: {e}")
         return {"status": f"❌ Reindex failed: {str(e)}"}
+        
 
 if __name__ == "__main__":
     import uvicorn

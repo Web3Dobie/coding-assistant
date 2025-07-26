@@ -70,7 +70,6 @@ def save_index():
         print(f"✅ Saved {_index.ntotal} vectors to persistent storage")
 
 def embed_text(text: str) -> List[float]:
-    """Generate embedding for text"""
     try:
         response = client.embeddings.create(
             model=os.getenv("AZURE_EMBEDDING_DEPLOYMENT_ID"),
@@ -79,7 +78,8 @@ def embed_text(text: str) -> List[float]:
         return response.data[0].embedding
     except Exception as e:
         print(f"❌ Embedding error: {e}")
-        raise
+        # Return a zero vector or raise a more specific exception
+        return [0.0] * EMBED_DIM
 
 def add_document(text: str, source_path: str):
     """Add document to vector store"""

@@ -1,0 +1,63 @@
+# .github/workflows/simple-deploy.yml
+# Simplified version - easier to set up and debug
+
+name: Simple Deploy
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Build and Deploy Backend
+      run: |
+        # Login to ACR
+        az acr login --name codingassistantacr9247
+        
+        # Build and push backend
+        docker build -t codingassistantacr9247.azurecr.io/coding-assistant-backend:latest ./backend
+        docker push codingassistantacr9247.azurecr.io/coding-assistant-backend:latest
+        
+        # Update container app
+        az containerapp update \
+          --name coding-assistant-backend \
+          --resource-group Web3Dobie \
+          --image codingassistantacr9247.azurecr.io/coding-assistant-backend:latest
+
+    - name: Build and Deploy Frontend  
+      run: |
+        # Build frontend with correct API URL
+        cd frontend/chat-ui
+        
+        # Create temporary .env for build
+        echo "VITE_API_BASE_URL=https://coding-assistant-backend.ambitiouspebble-f6886645.swedencentral.azurecontainerapps.io" > .env
+        
+        # Build and push
+        docker build -t codingassistantacr9247.azurecr.io/coding-assistant-frontend:latest .
+        docker push codingassistantacr9247.azurecr.io/coding-assistant-frontend:latest
+        
+        # Update container app
+        az containerapp update \
+          --name coding-assistant-frontend \
+          --resource-group Web3Dobie \
+          --image codingassistantacr9247.azurecr.io/coding-assistant-frontend:latest
+
+    - name: Verify Deployment
+      run: |
+        echo "Backend URL: https://coding-assistant-backend.ambitiouspebble-f6886645.swedencentral.azurecontainerapps.io/health"
+        echo "Frontend URL: https://coding-assistant-frontend.ambitiouspebble-f6886645.swedencentral.azurecontainerapps.io"
+        
+        # Test backend health
+        curl -f https://coding-assistant-backend.ambitiouspebble-f6886645.swedencentral.azurecontainerapps.io/health || echo "Backend health check failed"

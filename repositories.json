@@ -1,0 +1,22 @@
+[
+    {
+        "name": "X-Agent",
+        "url": "https://github.com/Web3Dobie/X-AI-Agent.git",
+        "private": false
+    },
+    {
+        "name": "DutchBrat-Website",
+        "url": "https://github.com/Web3Dobie/dutchbrat.com.git",
+        "private": false
+    },
+    {
+        "name": "Coding-Assistant",
+        "url": "https://github.com/Web3Dobie/coding-assistant.git",
+        "private": false
+    },
+    {
+        "name": "Hedgefund-Agent",
+        "url": "https://github.com/Web3Dobie/HedgeFundAgent.git",
+        "private": false
+    }
+]

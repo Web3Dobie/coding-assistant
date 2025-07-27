@@ -43,6 +43,13 @@ REQUIRED_ENV_VARS = [
     "DATABASE_URL"
 ]
 
+reindex_status = {
+    "status": "idle",
+    "started_at": None,
+    "message": "No reindex operation running",
+    "progress": 0
+}
+
 missing_vars = [var for var in REQUIRED_ENV_VARS if not os.getenv(var)]
 if missing_vars:
     raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
@@ -230,10 +237,18 @@ async def save_conversation_bg(
     except Exception as e:
         print(f"[Chat] Failed to save conversation: {e}")
 
-@app.post("/reindex")
-async def reindex(background_tasks: BackgroundTasks):
-    """Reindex the codebase and save to persistent storage"""
+async def run_reindex_background():
+    """Run reindex operation in the background"""
+    global reindex_status
+    
     try:
+        reindex_status.update({
+            "status": "running",
+            "started_at": datetime.utcnow().isoformat(),
+            "message": "Starting reindex operation...",
+            "progress": 0
+        })
+        
         print("[Reindex] Starting codebase reindexing...")
         
         # Define repositories
@@ -244,22 +259,93 @@ async def reindex(background_tasks: BackgroundTasks):
             {"name": "Hedgefund-Agent", "url": "https://github.com/Web3Dobie/HedgeFundAgent.git"}
         ]
         
-        # Sync repositories
-        github_sync.sync_repos(repos)
+        # Step 1: Sync repositories
+        reindex_status.update({
+            "message": "Syncing repositories...",
+            "progress": 10
+        })
+        
+        # Run git operations in thread pool to avoid blocking
+        await asyncio.to_thread(github_sync.sync_repos, repos)
         print("[Reindex] Repositories synced")
         
-        # Reindex codebase
-        index_codebase.walk_and_index()
+        # Step 2: Index codebase
+        reindex_status.update({
+            "message": "Indexing codebase...",
+            "progress": 50
+        })
+        
+        # Run indexing in thread pool
+        await asyncio.to_thread(index_codebase.walk_and_index)
         print("[Reindex] Codebase indexed")
         
-        # Force save to persistent storage
-        background_tasks.add_task(force_save)
+        # Step 3: Save vector store
+        reindex_status.update({
+            "message": "Saving vector store...",
+            "progress": 90
+        })
         
-        return {"status": "✅ Reindex completed successfully"}
+        force_save()
+        
+        # Complete
+        reindex_status.update({
+            "status": "completed",
+            "message": "✅ Reindex completed successfully",
+            "progress": 100
+        })
+        
+        print("[Reindex] ✅ Reindex completed successfully")
         
     except Exception as e:
-        print(f"[Reindex] Error: {e}")
-        return {"status": f"❌ Reindex failed: {str(e)}"}
+        error_msg = f"❌ Reindex failed: {str(e)}"
+        reindex_status.update({
+            "status": "failed",
+            "message": error_msg,
+            "progress": 0
+        })
+        print(f"[Reindex] {error_msg}")
+
+@app.post("/reindex")
+async def reindex():
+    """Start reindex operation in background and return immediately"""
+    global reindex_status
+    
+    # Check if already running
+    if reindex_status["status"] == "running":
+        return {
+            "status": "already_running",
+            "message": "Reindex operation already in progress",
+            "current_status": reindex_status
+        }
+    
+    # Start background task
+    asyncio.create_task(run_reindex_background())
+    
+    return {
+        "status": "started",
+        "message": "🚀 Reindex operation started in background",
+        "check_status_at": "/reindex/status"
+    }
+
+@app.get("/reindex/status")
+async def get_reindex_status():
+    """Get current status of reindex operation"""
+    return reindex_status
+
+@app.post("/reindex/cancel")
+async def cancel_reindex():
+    """Cancel running reindex operation"""
+    global reindex_status
+    
+    if reindex_status["status"] == "running":
+        reindex_status.update({
+            "status": "cancelled",
+            "message": "❌ Reindex operation cancelled",
+            "progress": 0
+        })
+        return {"status": "cancelled", "message": "Reindex operation cancelled"}
+    else:
+        return {"status": "not_running", "message": "No reindex operation to cancel"}
         
 
 if __name__ == "__main__":

@@ -58,47 +58,29 @@ def release_lock(lock_file):
         print(f"Warning: Could not release lock: {e}")
 
 def load_or_create_index():
-    """Load existing index or create new one with proper locking"""
+    """Load existing index or create new one - ONLY load once"""
     global _index, _metadata, _last_loaded
     
+    # Only load if not already loaded
+    if _index is not None and _metadata is not None:
+        return _index, _metadata
+    
     try:
-        current_time = os.path.getmtime(INDEX_PATH) if os.path.exists(INDEX_PATH) else 0
+        if os.path.exists(INDEX_PATH) and os.path.exists(META_PATH):
+            print(f"📁 Loading vector store from {INDEX_PATH}")
+            _index = faiss.read_index(INDEX_PATH)
+            
+            with open(META_PATH, "rb") as f:
+                _metadata = pickle.load(f)
+            
+            print(f"✅ Loaded {_index.ntotal} vectors from persistent storage")
+        else:
+            print("🆕 Creating new vector store")
+            _index = faiss.IndexFlatL2(EMBED_DIM)
+            _metadata = []
         
-        # Only reload if file changed or not loaded yet
-        if _index is None or _last_loaded != current_time:
-            # Use a shared lock for reading
-            lock_file = None
-            try:
-                lock_file = open(LOCK_PATH, 'w')
-                fcntl.flock(lock_file.fileno(), fcntl.LOCK_SH)  # Shared lock for reading
-                
-                if os.path.exists(INDEX_PATH) and os.path.exists(META_PATH):
-                    print(f"📁 Loading vector store from {INDEX_PATH}")
-                    
-                    # Verify file integrity before loading
-                    if os.path.getsize(INDEX_PATH) > 0 and os.path.getsize(META_PATH) > 0:
-                        _index = faiss.read_index(INDEX_PATH)
-                        
-                        with open(META_PATH, "rb") as f:
-                            _metadata = pickle.load(f)
-                        
-                        print(f"✅ Loaded {_index.ntotal} vectors from persistent storage")
-                    else:
-                        print("⚠️ Index files are empty, creating new index")
-                        _index = faiss.IndexFlatL2(EMBED_DIM)
-                        _metadata = []
-                else:
-                    print("🆕 Creating new vector store")
-                    _index = faiss.IndexFlatL2(EMBED_DIM)
-                    _metadata = []
-                
-                _last_loaded = current_time
-                
-            finally:
-                if lock_file:
-                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
-                    lock_file.close()
-                    
+        _last_loaded = time.time()
+        
     except Exception as e:
         print(f"❌ Error loading vector store: {e}")
         print("🆕 Creating new vector store due to error")
@@ -160,7 +142,7 @@ def embed_text(text: str) -> List[float]:
         return [0.0] * EMBED_DIM
 
 def add_document(text: str, source_path: str):
-    """Add document to vector store with proper locking"""
+    """Add document to vector store WITHOUT frequent saves"""
     index, metadata = load_or_create_index()
     
     try:
@@ -168,9 +150,13 @@ def add_document(text: str, source_path: str):
         index.add(np.array([embedding]).astype('float32'))
         metadata.append({"text": text, "source": source_path})
         
-        # Save less frequently to reduce lock contention
-        if len(metadata) % 50 == 0:  # Changed from 10 to 50
-            save_index()
+        # REMOVE THIS LINE - it's causing the I/O storm
+        # if len(metadata) % 10 == 0:
+        #     save_index()
+        
+        # Only log progress every 100 documents
+        if len(metadata) % 100 == 0:
+            print(f"📊 Progress: {len(metadata)} documents indexed")
             
     except Exception as e:
         print(f"❌ Error adding document: {e}")

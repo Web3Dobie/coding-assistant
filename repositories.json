@@ -18,5 +18,10 @@
         "name": "Hedgefund-Agent",
         "url": "https://github.com/Web3Dobie/HedgeFundAgent.git",
         "private": false
+    },
+    {
+        "name": "Trading-Bot",
+        "url": "https://github.com/Web3Dobie/trading-bot.git",
+        "private": true
     }
 ]

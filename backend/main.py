@@ -54,7 +54,7 @@ missing_vars = [var for var in REQUIRED_ENV_VARS if not os.getenv(var)]
 if missing_vars:
     raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
-REPO_CLONES_DIR = "data/repo_clones"  # Directory where repositories are cloned
+REPO_CLONES_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../data/repo_clones"))
 
 app = FastAPI(
     title="Coding Assistant API", 
@@ -352,8 +352,8 @@ async def cancel_reindex():
 @app.get("/list-files")
 async def list_files(repo_name: str):
     """List all files in the specified repository."""
-    repo_path = Path(REPO_CLONES_DIR) / repo_name
-    if not repo_path.exists() or not repo_path.is_dir():
+    repo_path = os.path.join(REPO_CLONES_DIR, repo_name)
+    if not os.path.exists(repo_path):
         raise HTTPException(status_code=404, detail="Repository not found")
 
     files = []
@@ -366,9 +366,13 @@ async def list_files(repo_name: str):
 @app.post("/get-file")
 async def get_file(file_path: str):
     """Retrieve the contents of a specified file."""
-    full_path = Path(REPO_CLONES_DIR) / file_path
+    full_path = os.path.join(REPO_CLONES_DIR) / file_path
     if not full_path.exists() or not full_path.is_file():
         raise HTTPException(status_code=404, detail="File not found")
+
+    # Ensure the file is within the REPO_CLONES_DIR directory
+    if not str(full_path).startswith(str(REPO_CLONES_DIR)):
+        raise HTTPException(status_code=403, detail="Access to this file is forbidden")
 
     try:
         with open(full_path, "r") as f:

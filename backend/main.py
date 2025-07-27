@@ -54,6 +54,8 @@ missing_vars = [var for var in REQUIRED_ENV_VARS if not os.getenv(var)]
 if missing_vars:
     raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
+REPO_CLONES_DIR = "data/repo_clones"  # Directory where repositories are cloned
+
 app = FastAPI(
     title="Coding Assistant API", 
     version="2.0.0",
@@ -346,7 +348,35 @@ async def cancel_reindex():
         return {"status": "cancelled", "message": "Reindex operation cancelled"}
     else:
         return {"status": "not_running", "message": "No reindex operation to cancel"}
-        
+
+@app.get("/list-files")
+async def list_files(repo_name: str):
+    """List all files in the specified repository."""
+    repo_path = Path(REPO_CLONES_DIR) / repo_name
+    if not repo_path.exists() or not repo_path.is_dir():
+        raise HTTPException(status_code=404, detail="Repository not found")
+
+    files = []
+    for root, _, filenames in os.walk(repo_path):
+        for filename in filenames:
+            files.append(os.path.relpath(os.path.join(root, filename), repo_path))
+
+    return {"files": files}
+
+@app.post("/get-file")
+async def get_file(file_path: str):
+    """Retrieve the contents of a specified file."""
+    full_path = Path(REPO_CLONES_DIR) / file_path
+    if not full_path.exists() or not full_path.is_file():
+        raise HTTPException(status_code=404, detail="File not found")
+
+    try:
+        with open(full_path, "r") as f:
+            content = f.read()
+        return {"file_path": str(full_path), "content": content}
+    except Exception as e:
+        print(f"[Error] Failed to read file: {e}")
+        raise HTTPException(status_code=500, detail="An unexpected error occurred while reading the file.")     
 
 if __name__ == "__main__":
     import uvicorn

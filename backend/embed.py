@@ -7,15 +7,19 @@ from typing import List
 from sklearn.metrics.pairwise import cosine_similarity
 from dotenv import load_dotenv
 from pathlib import Path
+import fcntl  # For file locking
+import time
+import tempfile
 
 load_dotenv()
 
 EMBED_DIM = 1536
 
 # Use persistent storage path (mounted Azure File Share)
-VECTOR_STORE_PATH = os.getenv("VECTOR_STORE_PATH", "/mnt/vector-store")
+VECTOR_STORE_PATH = os.getenv("VECTOR_STORE_PATH", "/tmp/vector-store")
 INDEX_PATH = os.path.join(VECTOR_STORE_PATH, "vector_store.faiss")
 META_PATH = os.path.join(VECTOR_STORE_PATH, "vector_meta.pkl")
+LOCK_PATH = os.path.join(VECTOR_STORE_PATH, "vector_store.lock")
 
 # Ensure the directory exists
 os.makedirs(VECTOR_STORE_PATH, exist_ok=True)
@@ -31,43 +35,118 @@ _index = None
 _metadata = None
 _last_loaded = None
 
+def acquire_lock(timeout=30):
+    """Acquire exclusive lock for vector store operations"""
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        try:
+            lock_file = open(LOCK_PATH, 'w')
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return lock_file
+        except (IOError, OSError):
+            time.sleep(0.1)
+    raise TimeoutError("Could not acquire lock for vector store")
+
+def release_lock(lock_file):
+    """Release the vector store lock"""
+    try:
+        fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+        lock_file.close()
+        if os.path.exists(LOCK_PATH):
+            os.remove(LOCK_PATH)
+    except Exception as e:
+        print(f"Warning: Could not release lock: {e}")
+
 def load_or_create_index():
-    """Load existing index or create new one"""
+    """Load existing index or create new one with proper locking"""
     global _index, _metadata, _last_loaded
     
-    current_time = os.path.getmtime(INDEX_PATH) if os.path.exists(INDEX_PATH) else 0
-    
-    # Only reload if file changed or not loaded yet
-    if _index is None or _last_loaded != current_time:
-        if os.path.exists(INDEX_PATH) and os.path.exists(META_PATH):
-            print(f"📁 Loading vector store from {INDEX_PATH}")
-            _index = faiss.read_index(INDEX_PATH)
-            
-            with open(META_PATH, "rb") as f:
-                _metadata = pickle.load(f)
-            
-            print(f"✅ Loaded {_index.ntotal} vectors from persistent storage")
-        else:
-            print("🆕 Creating new vector store")
-            _index = faiss.IndexFlatL2(EMBED_DIM)
-            _metadata = []
+    try:
+        current_time = os.path.getmtime(INDEX_PATH) if os.path.exists(INDEX_PATH) else 0
         
-        _last_loaded = current_time
+        # Only reload if file changed or not loaded yet
+        if _index is None or _last_loaded != current_time:
+            # Use a shared lock for reading
+            lock_file = None
+            try:
+                lock_file = open(LOCK_PATH, 'w')
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_SH)  # Shared lock for reading
+                
+                if os.path.exists(INDEX_PATH) and os.path.exists(META_PATH):
+                    print(f"📁 Loading vector store from {INDEX_PATH}")
+                    
+                    # Verify file integrity before loading
+                    if os.path.getsize(INDEX_PATH) > 0 and os.path.getsize(META_PATH) > 0:
+                        _index = faiss.read_index(INDEX_PATH)
+                        
+                        with open(META_PATH, "rb") as f:
+                            _metadata = pickle.load(f)
+                        
+                        print(f"✅ Loaded {_index.ntotal} vectors from persistent storage")
+                    else:
+                        print("⚠️ Index files are empty, creating new index")
+                        _index = faiss.IndexFlatL2(EMBED_DIM)
+                        _metadata = []
+                else:
+                    print("🆕 Creating new vector store")
+                    _index = faiss.IndexFlatL2(EMBED_DIM)
+                    _metadata = []
+                
+                _last_loaded = current_time
+                
+            finally:
+                if lock_file:
+                    fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+                    lock_file.close()
+                    
+    except Exception as e:
+        print(f"❌ Error loading vector store: {e}")
+        print("🆕 Creating new vector store due to error")
+        _index = faiss.IndexFlatL2(EMBED_DIM)
+        _metadata = []
+        _last_loaded = time.time()
     
     return _index, _metadata
 
 def save_index():
-    """Save index to persistent storage"""
+    """Save index to persistent storage with atomic writes and locking"""
     global _index, _metadata
     
-    if _index is not None and _metadata is not None:
-        print(f"💾 Saving vector store to {INDEX_PATH}")
-        faiss.write_index(_index, INDEX_PATH)
+    if _index is None or _metadata is None:
+        print("⚠️ No index to save")
+        return
+    
+    lock_file = None
+    try:
+        # Acquire exclusive lock for writing
+        lock_file = acquire_lock(timeout=10)
         
-        with open(META_PATH, "wb") as f:
+        print(f"💾 Saving vector store to {INDEX_PATH}")
+        
+        # Use atomic writes to prevent corruption
+        temp_index = INDEX_PATH + ".tmp"
+        temp_meta = META_PATH + ".tmp"
+        
+        # Write to temporary files first
+        faiss.write_index(_index, temp_index)
+        with open(temp_meta, "wb") as f:
             pickle.dump(_metadata, f)
         
+        # Atomically move temp files to final location
+        os.rename(temp_index, INDEX_PATH)
+        os.rename(temp_meta, META_PATH)
+        
         print(f"✅ Saved {_index.ntotal} vectors to persistent storage")
+        
+    except Exception as e:
+        print(f"❌ Error saving vector store: {e}")
+        # Clean up temp files on error
+        for temp_file in [INDEX_PATH + ".tmp", META_PATH + ".tmp"]:
+            if os.path.exists(temp_file):
+                os.remove(temp_file)
+    finally:
+        if lock_file:
+            release_lock(lock_file)
 
 def embed_text(text: str) -> List[float]:
     try:
@@ -78,11 +157,10 @@ def embed_text(text: str) -> List[float]:
         return response.data[0].embedding
     except Exception as e:
         print(f"❌ Embedding error: {e}")
-        # Return a zero vector or raise a more specific exception
         return [0.0] * EMBED_DIM
 
 def add_document(text: str, source_path: str):
-    """Add document to vector store"""
+    """Add document to vector store with proper locking"""
     index, metadata = load_or_create_index()
     
     try:
@@ -90,8 +168,8 @@ def add_document(text: str, source_path: str):
         index.add(np.array([embedding]).astype('float32'))
         metadata.append({"text": text, "source": source_path})
         
-        # Save every 10 documents to avoid too frequent I/O
-        if len(metadata) % 10 == 0:
+        # Save less frequently to reduce lock contention
+        if len(metadata) % 50 == 0:  # Changed from 10 to 50
             save_index()
             
     except Exception as e:
@@ -99,7 +177,7 @@ def add_document(text: str, source_path: str):
         raise
 
 def get_relevant_chunks(query: str, top_k=5) -> str:
-    """Get relevant code chunks for query"""
+    """Get relevant code chunks for query with better error handling"""
     index, metadata = load_or_create_index()
     
     if index.ntotal == 0:
@@ -119,20 +197,66 @@ def get_relevant_chunks(query: str, top_k=5) -> str:
         
     except Exception as e:
         print(f"❌ Error retrieving chunks: {e}")
-        return "Error retrieving code context."
+        # Try to recover by recreating the index
+        try:
+            print("🔄 Attempting to recover by clearing corrupted index...")
+            global _index, _metadata
+            _index = faiss.IndexFlatL2(EMBED_DIM)
+            _metadata = []
+            return "Code context temporarily unavailable due to index corruption. Please run /reindex."
+        except:
+            return "Error retrieving code context."
 
 def get_vector_store_stats():
     """Get statistics about the vector store"""
-    index, metadata = load_or_create_index()
-    
-    return {
-        "total_vectors": index.ntotal if index else 0,
-        "total_metadata": len(metadata) if metadata else 0,
-        "index_file_exists": os.path.exists(INDEX_PATH),
-        "metadata_file_exists": os.path.exists(META_PATH),
-        "storage_path": VECTOR_STORE_PATH
-    }
+    try:
+        index, metadata = load_or_create_index()
+        
+        return {
+            "total_vectors": index.ntotal if index else 0,
+            "total_metadata": len(metadata) if metadata else 0,
+            "index_file_exists": os.path.exists(INDEX_PATH),
+            "metadata_file_exists": os.path.exists(META_PATH),
+            "storage_path": VECTOR_STORE_PATH,
+            "index_file_size": os.path.getsize(INDEX_PATH) if os.path.exists(INDEX_PATH) else 0,
+            "metadata_file_size": os.path.getsize(META_PATH) if os.path.exists(META_PATH) else 0
+        }
+    except Exception as e:
+        return {
+            "error": str(e),
+            "total_vectors": 0,
+            "total_metadata": 0,
+            "index_file_exists": False,
+            "metadata_file_exists": False,
+            "storage_path": VECTOR_STORE_PATH
+        }
 
 def force_save():
     """Force save the current index state"""
     save_index()
+
+def clear_corrupted_index():
+    """Clear corrupted index files and start fresh"""
+    global _index, _metadata
+    
+    lock_file = None
+    try:
+        lock_file = acquire_lock()
+        
+        # Remove corrupted files
+        for file_path in [INDEX_PATH, META_PATH]:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                print(f"🗑️ Removed corrupted file: {file_path}")
+        
+        # Reset in-memory cache
+        _index = faiss.IndexFlatL2(EMBED_DIM)
+        _metadata = []
+        
+        print("✅ Cleared corrupted index, starting fresh")
+        
+    except Exception as e:
+        print(f"❌ Error clearing corrupted index: {e}")
+    finally:
+        if lock_file:
+            release_lock(lock_file)

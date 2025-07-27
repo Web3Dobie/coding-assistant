@@ -57,6 +57,19 @@ export default function App() {
           const fileList = data.files.join("\n");
           setMessages([...messages, { role: "system", content: `Files in ${repoName}:\n${fileList}` }]);
         }
+      } else if (command.startsWith("/reindex")) {
+        const response = await fetch(`${API_BASE_URL}/reindex`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+        });
+
+        if (!response.ok) {
+          const error = await response.json();
+          setMessages([...messages, { role: "system", content: `Error: ${error.detail}` }]);
+        } else {
+          const data = await response.json();
+          setMessages([...messages, { role: "system", content: `Reindexing completed: ${data.message}` }]);
+        }
       } else {
         setMessages([...messages, { role: "system", content: `Unknown command: ${command}` }]);
       }

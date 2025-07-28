@@ -1,6 +1,5 @@
 import os
 import json
-import subprocess
 from pathlib import Path
 from typing import List, Dict
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
@@ -9,48 +8,50 @@ from pydantic import BaseModel
 from datetime import datetime
 import asyncio
 
-# Load environment variables
-from dotenv import load_dotenv
+# Import our modules
+import embed
+import github_sync
+import index_codebase
+from embed import get_relevant_chunks, get_vector_store_stats, force_save
+from database import init_database, get_db, cleanup_old_conversations
+from chat_service import ChatService
+from sqlalchemy.ext.asyncio import AsyncSession
+from openai import AzureOpenAI
 
-env_paths = [
-    Path(__file__).parent / ".env",  # Same directory
-    Path(__file__).parent.parent / ".env",  # Parent directory
-]
-
-for env_path in env_paths:
-    if env_path.exists():
-        load_dotenv(env_path)
-        break
-else:
-    print("No .env file found, trying default load_dotenv()")
-    load_dotenv()
-
-# Debug: Print what was loaded
-print(f"GITHUB_PAT loaded: {'✅' if os.getenv('GITHUB_PAT') else '❌'}")
+# Load environment variables (only for local development)
+# Azure Container Apps provides these directly
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # This will be ignored in Azure Container Apps
+except ImportError:
+    pass  # dotenv not installed in production
 
 # Validate required environment variables
-REQUIRED_ENV_VARS = ["GITHUB_PAT"]
+REQUIRED_ENV_VARS = [
+    "AZURE_OPENAI_API_KEY",
+    "AZURE_RESOURCE_NAME", 
+    "AZURE_API_VERSION",
+    "AZURE_DEPLOYMENT_ID",
+    "AZURE_EMBEDDING_DEPLOYMENT_ID",
+    "DATABASE_URL",
+    "GITHUB_PAT"
+]
+
 missing_vars = [var for var in REQUIRED_ENV_VARS if not os.getenv(var)]
 if missing_vars:
     raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
-# Load the Personal Access Token (PAT)
-GITHUB_PAT = os.getenv("GITHUB_PAT")
-if not GITHUB_PAT:
-    raise ValueError("❌ Missing GITHUB_PAT environment variable. Please set it in your .env file or system environment.")
-
-# Directory where repositories are cloned
-REPO_CLONES_DIR = os.getenv("REPO_CLONES_DIR", "data/repo_clones")
-
 # Load repositories from configuration file
-REPOSITORIES_CONFIG_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), "repositories.json"))
+REPOSITORIES_CONFIG_PATH = Path(__file__).parent / "repositories.json"
 
 try:
     with open(REPOSITORIES_CONFIG_PATH, "r") as f:
         REPOSITORIES = json.load(f)
-        print(f"✅ Loaded repositories from {REPOSITORIES_CONFIG_PATH}")
+        print(f"✅ Loaded {len(REPOSITORIES)} repositories from config")
 except Exception as e:
     raise ValueError(f"❌ Failed to load repositories configuration: {e}")
+
+print("✅ Environment and configuration loaded successfully")
 
 # FastAPI app setup
 app = FastAPI(

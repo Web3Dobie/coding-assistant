@@ -1,12 +1,13 @@
 import os
 import json
 from pathlib import Path
-from typing import List, Dict
+from typing import List, Dict, Optional
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from datetime import datetime
 import asyncio
+import time
 
 # Import our modules
 import embed
@@ -126,7 +127,7 @@ def sync_repos(repositories: List[Dict[str, str]], token: str = None):
 
 # Background task for reindexing
 async def run_reindex_background():
-    """Run reindex operation in the background"""
+    """Run reindex operation in the background with detailed logging"""
     global reindex_status
     
     try:
@@ -137,7 +138,7 @@ async def run_reindex_background():
             "progress": 0
         })
         
-        print("[Reindex] Starting codebase reindexing...")
+        print("[Reindex] 🚀 Starting codebase reindexing...")
         
         # Get GITHUB_PAT from environment
         github_pat = os.getenv("GITHUB_PAT")
@@ -145,32 +146,65 @@ async def run_reindex_background():
             raise ValueError("GITHUB_PAT environment variable not found")
         
         # Step 1: Sync repositories with PAT
+        print("[Reindex] 📥 Starting repository sync...")
         reindex_status.update({
             "message": "Syncing repositories...",
             "progress": 10
         })
         
-        # Pass the PAT and repositories to sync function
+        start_time = time.time()
         await asyncio.to_thread(github_sync.sync_repos, REPOSITORIES, github_pat)
-        print("[Reindex] Repositories synced")
+        sync_duration = time.time() - start_time
+        print(f"[Reindex] ✅ Repositories synced in {sync_duration:.1f}s")
         
-        # Step 2: Index codebase
+        # Step 2: Index codebase with progress tracking
+        print("[Reindex] 📊 Starting codebase indexing...")
         reindex_status.update({
             "message": "Indexing codebase...",
             "progress": 50
         })
         
-        # Run indexing in thread pool
-        await asyncio.to_thread(index_codebase.walk_and_index)
-        print("[Reindex] Codebase indexed")
+        # Add periodic status updates during indexing
+        def update_indexing_progress():
+            """Periodically update status during long indexing process"""
+            while reindex_status["status"] == "running" and reindex_status["progress"] < 90:
+                time.sleep(10)  # Update every 10 seconds
+                if reindex_status["status"] == "running":
+                    current_time = datetime.utcnow().isoformat()
+                    reindex_status.update({
+                        "message": f"Still indexing... (last update: {current_time})",
+                        "progress": 50
+                    })
+                    print(f"[Reindex] 🔄 Still processing files... (alive check)")
+        
+        # Start progress updater in background
+        progress_task = asyncio.create_task(asyncio.to_thread(update_indexing_progress))
+        
+        try:
+            # Run indexing in thread pool
+            start_time = time.time()
+            await asyncio.to_thread(index_codebase.walk_and_index)
+            index_duration = time.time() - start_time
+            print(f"[Reindex] ✅ Codebase indexed in {index_duration:.1f}s")
+        finally:
+            # Cancel progress updater
+            progress_task.cancel()
+            try:
+                await progress_task
+            except asyncio.CancelledError:
+                pass
         
         # Step 3: Save vector store
+        print("[Reindex] 💾 Saving vector store...")
         reindex_status.update({
             "message": "Saving vector store...",
             "progress": 90
         })
         
+        start_time = time.time()
         force_save()
+        save_duration = time.time() - start_time
+        print(f"[Reindex] ✅ Vector store saved in {save_duration:.1f}s")
         
         # Complete
         reindex_status.update({
@@ -179,7 +213,7 @@ async def run_reindex_background():
             "progress": 100
         })
         
-        print("[Reindex] ✅ Reindex completed successfully")
+        print("[Reindex] 🎉 Reindex completed successfully")
         
     except Exception as e:
         error_msg = f"❌ Reindex failed: {str(e)}"
@@ -189,6 +223,7 @@ async def run_reindex_background():
             "progress": 0
         })
         print(f"[Reindex] {error_msg}")
+        print(f"[Reindex] Error details: {repr(e)}")  # More detailed error info
 
 # Reindex endpoint
 @app.post("/reindex")
@@ -218,6 +253,15 @@ async def reindex():
 async def get_reindex_status():
     """Get current status of reindex operation"""
     return reindex_status
+
+@app.get("/reindex/ping")
+async def ping_reindex():
+    """Ping endpoint to check if reindex process is responsive"""
+    return {
+        "status": "pong",
+        "timestamp": datetime.utcnow().isoformat(),
+        "current_status": reindex_status
+    }
 
 # List files in a repository
 @app.get("/list-files")
@@ -259,6 +303,109 @@ async def get_file(file_path: str):
 async def health_check():
     """Basic health check endpoint"""
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+@app.post("/chat")
+async def chat(
+    request: ChatRequest, 
+    background_tasks: BackgroundTasks,
+    db: AsyncSession = Depends(get_db)
+):
+    """Main chat endpoint for AI-powered coding assistance"""
+    try:
+        project = request.project
+        messages = [msg.dict(exclude_none=True) for msg in request.messages]
+
+        print(f"[Chat] Project: {project}, Messages: {len(messages)}")
+
+        # Validate inputs
+        if not project or not messages:
+            raise HTTPException(status_code=400, detail="Project and messages required")
+
+        # Get user message content for context retrieval
+        user_text = " ".join(msg["content"] for msg in messages if msg["role"] == "user")
+        
+        # Get relevant code context
+        try:
+            relevant_code = get_relevant_chunks(user_text, top_k=5)
+            print(f"[Chat] Retrieved relevant code context")
+        except Exception as e:
+            print(f"[Chat] Vector search failed: {e}")
+            relevant_code = "No relevant code context available. Try running /reindex."
+
+        # Build enhanced system message
+        system_message = {
+            "role": "system",
+            "content": (
+                f"You are an expert coding assistant for the {project} project. "
+                f"You help with code analysis, debugging, documentation, and improvements.\n\n"
+                f"Relevant code context:\n{relevant_code}\n\n"
+                f"Guidelines:\n"
+                f"- Provide clear, actionable advice\n"
+                f"- Reference the provided code when relevant\n"
+                f"- Suggest specific improvements\n"
+                f"- Use code examples when helpful\n"
+                f"- If context is insufficient, ask for clarification"
+            )
+        }
+
+        full_messages = [system_message] + messages
+
+        # Call Azure OpenAI
+        try:
+            # Initialize OpenAI client (make sure this is defined somewhere)
+            client = AzureOpenAI(
+                api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+                api_version=os.getenv("AZURE_API_VERSION"),
+                azure_endpoint=f"https://{os.getenv('AZURE_RESOURCE_NAME')}.openai.azure.com"
+            )
+            
+            response = client.chat.completions.create(
+                model=os.getenv("AZURE_DEPLOYMENT_ID"),
+                messages=full_messages,
+                temperature=0.3,
+                max_tokens=2000,
+                timeout=30
+            )
+            assistant_reply = response.choices[0].message.content
+            print(f"[Chat] Generated response ({len(assistant_reply)} chars)")
+            
+        except Exception as openai_error:
+            print(f"[Chat] OpenAI API error: {openai_error}")
+            raise HTTPException(
+                status_code=503,
+                detail="AI service temporarily unavailable. Please try again."
+            )
+
+        # Save conversation to database (background task)
+        chat_service = ChatService(db)
+        background_tasks.add_task(
+            save_conversation_bg,
+            chat_service,
+            project,
+            messages,
+            assistant_reply
+        )
+
+        return {"response": assistant_reply}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"[Chat] Unexpected error: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+async def save_conversation_bg(
+    chat_service: ChatService, 
+    project: str, 
+    messages: list, 
+    assistant_reply: str
+):
+    """Background task to save conversation"""
+    try:
+        await chat_service.save_conversation(project, messages, assistant_reply)
+        print("[Chat] Conversation saved to database")
+    except Exception as e:
+        print(f"[Chat] Failed to save conversation: {e}")
+
 
 # Main entry point
 if __name__ == "__main__":

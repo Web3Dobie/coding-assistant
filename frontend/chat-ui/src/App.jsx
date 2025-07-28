@@ -3,13 +3,51 @@ import Message from "./components/Message";
 import { sendMessage } from "./api/chat";
 
 export default function App() {
-  const [project, setProject] = useState("X-Agent");
+  const [project, setProject] = useState("");
+  const [repositories, setRepositories] = useState([]);
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
+  const [loadingRepos, setLoadingRepos] = useState(true);
 
   const textareaRef = useRef(null);
   const messagesEndRef = useRef(null);
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+
+  // Load repositories on component mount
+  useEffect(() => {
+    const loadRepositories = async () => {
+      try {
+        setLoadingRepos(true);
+        const response = await fetch(`${API_BASE_URL}/repositories`);
+
+        if (response.ok) {
+          const data = await response.json();
+          setRepositories(data.repositories);
+
+          // Set first repository as default if none selected
+          if (data.repositories.length > 0 && !project) {
+            setProject(data.repositories[0]);
+          }
+        } else {
+          console.error("Failed to load repositories");
+          // Fallback to hardcoded list
+          const fallbackRepos = ["X-Agent", "DutchBrat-Website", "Coding-Assistant", "Hedgefund-Agent"];
+          setRepositories(fallbackRepos);
+          setProject(fallbackRepos[0]);
+        }
+      } catch (error) {
+        console.error("Error loading repositories:", error);
+        // Fallback to hardcoded list
+        const fallbackRepos = ["X-Agent", "DutchBrat-Website", "Coding-Assistant", "Hedgefund-Agent"];
+        setRepositories(fallbackRepos);
+        setProject(fallbackRepos[0]);
+      } finally {
+        setLoadingRepos(false);
+      }
+    };
+
+    loadRepositories();
+  }, []);
 
   const getTimestamp = () =>
     new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
@@ -21,7 +59,7 @@ export default function App() {
         const response = await fetch(`${API_BASE_URL}/get-file`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ file_path: `/app/data/${filePath}` }), // Adjust path for container
+          body: JSON.stringify({ file_path: `/app/data/${filePath}` }),
         });
 
         if (!response.ok) {
@@ -57,19 +95,18 @@ export default function App() {
           const fileList = data.files.join("\n");
           setMessages([...messages, { role: "system", content: `Files in ${repoName}:\n${fileList}` }]);
         }
-      } else if (command.startsWith("/reindex")) {
-        const response = await fetch(`${API_BASE_URL}/reindex`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-        });
-
-        if (!response.ok) {
-          const error = await response.json();
-          setMessages([...messages, { role: "system", content: `Error: ${error.detail}` }]);
-        } else {
+      } else if (command === "/refresh-repos") {
+        // Command to refresh repository list
+        setLoadingRepos(true);
+        const response = await fetch(`${API_BASE_URL}/repositories`);
+        if (response.ok) {
           const data = await response.json();
-          setMessages([...messages, { role: "system", content: `Reindexing completed: ${data.message}` }]);
+          setRepositories(data.repositories);
+          setMessages([...messages, { role: "system", content: `✅ Refreshed repository list. Found ${data.repositories.length} repositories.` }]);
+        } else {
+          setMessages([...messages, { role: "system", content: `❌ Failed to refresh repository list.` }]);
         }
+        setLoadingRepos(false);
       } else {
         setMessages([...messages, { role: "system", content: `Unknown command: ${command}` }]);
       }
@@ -82,8 +119,8 @@ export default function App() {
   // Auto-resize textarea up to 10 lines (240px assuming 24px line height)
   useEffect(() => {
     if (textareaRef.current) {
-      textareaRef.current.style.height = "auto"; // reset height
-      const maxHeight = 10 * 24; // 10 lines * 24px line height
+      textareaRef.current.style.height = "auto";
+      const maxHeight = 10 * 24;
       textareaRef.current.style.height = `${Math.min(
         textareaRef.current.scrollHeight,
         maxHeight
@@ -103,9 +140,8 @@ export default function App() {
     if (!input.trim()) return;
 
     if (input.startsWith("/")) {
-      await onCommand(input.trim()); // Trigger onCommand for commands
+      await onCommand(input.trim());
     } else {
-
       const userMessage = {
         role: "user",
         content: input.trim(),
@@ -142,16 +178,36 @@ export default function App() {
         {/* Header with Project Selector */}
         <header className="p-4 border-b text-center bg-gray-100 flex items-center justify-between">
           <h1 className="text-lg font-semibold">💬 Chat Coding Assistant</h1>
-          <select
-            value={project}
-            onChange={(e) => setProject(e.target.value)}
-            className="border border-gray-300 rounded px-2 py-1 text-sm"
-          >
-            <option value="X-Agent">X-Agent</option>
-            <option value="DutchBrat-Website">DutchBrat-Website</option>
-            <option value="Coding-Assistant">Coding-Assistant</option>
-            <option value="Hedgefund-Agent">Hedgefund-Agent</option>
-          </select>
+          <div className="flex items-center gap-2">
+            {loadingRepos ? (
+              <div className="text-sm text-gray-500">Loading repositories...</div>
+            ) : (
+              <select
+                value={project}
+                onChange={(e) => setProject(e.target.value)}
+                className="border border-gray-300 rounded px-2 py-1 text-sm"
+                disabled={repositories.length === 0}
+              >
+                {repositories.length === 0 ? (
+                  <option value="">No repositories found</option>
+                ) : (
+                  repositories.map((repo) => (
+                    <option key={repo} value={repo}>
+                      {repo}
+                    </option>
+                  ))
+                )}
+              </select>
+            )}
+            <button
+              onClick={() => onCommand("/refresh-repos")}
+              className="text-xs bg-blue-100 hover:bg-blue-200 px-2 py-1 rounded text-blue-700"
+              disabled={loadingRepos}
+              title="Refresh repository list"
+            >
+              🔄
+            </button>
+          </div>
         </header>
 
         {/* Message List */}
@@ -174,18 +230,23 @@ export default function App() {
               ref={textareaRef}
               rows={1}
               className="flex-1 px-4 py-2 border border-gray-300 rounded-md resize-none"
-              placeholder="Type your message..."
+              placeholder={`Type your message... (Project: ${project || 'Loading...'})`}
               value={input}
               onChange={(e) => setInput(e.target.value)}
               style={{ lineHeight: "24px" }}
+              disabled={!project}
             />
             <button
               type="submit"
-              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700"
+              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:bg-gray-400"
+              disabled={!project}
             >
               Send
             </button>
           </form>
+          <div className="text-xs text-gray-500 mt-1">
+            Commands: /refresh-repos, /list-files [repo], /get-file [path]
+          </div>
         </footer>
       </div>
     </div>

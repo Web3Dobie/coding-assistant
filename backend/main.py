@@ -126,41 +126,43 @@ def sync_repos(repositories: List[Dict[str, str]], token: str = None):
                 print(f"[Sync Repos] Failed to clone {repo_name}: {e}")
 
 # Background task for reindexing
-async def run_reindex_background():
-    """Run reindex operation in the background with detailed logging"""
+async def run_reindex_background(repo_name: str):
+    """Run reindex operation in the background with detailed logging for specific repository"""
     global reindex_status
     
     try:
         reindex_status.update({
             "status": "running",
+            "repo_name": repo_name,
             "started_at": datetime.utcnow().isoformat(),
-            "message": "Starting reindex operation...",
+            "message": f"Starting reindex operation for {repo_name}...",
             "progress": 0
         })
         
-        print("[Reindex] 🚀 Starting codebase reindexing...")
+        print(f"[Reindex] 🚀 Starting codebase reindexing for repository: {repo_name}")
         
         # Get GITHUB_PAT from environment
         github_pat = os.getenv("GITHUB_PAT")
         if not github_pat:
             raise ValueError("GITHUB_PAT environment variable not found")
         
-        # Step 1: Sync repositories with PAT
-        print("[Reindex] 📥 Starting repository sync...")
+        # Step 1: Sync specific repository with PAT
+        print(f"[Reindex] 📥 Starting repository sync for {repo_name}...")
         reindex_status.update({
-            "message": "Syncing repositories...",
+            "message": f"Syncing repository {repo_name}...",
             "progress": 10
         })
         
         start_time = time.time()
-        await asyncio.to_thread(github_sync.sync_repos, REPOSITORIES, github_pat)
+        # Sync only the specified repository instead of all repositories
+        await asyncio.to_thread(github_sync.sync_repos, [repo_name], github_pat)
         sync_duration = time.time() - start_time
-        print(f"[Reindex] ✅ Repositories synced in {sync_duration:.1f}s")
+        print(f"[Reindex] ✅ Repository {repo_name} synced in {sync_duration:.1f}s")
         
-        # Step 2: Index codebase with progress tracking
-        print("[Reindex] 📊 Starting codebase indexing...")
+        # Step 2: Index specific repository codebase with progress tracking
+        print(f"[Reindex] 📊 Starting codebase indexing for {repo_name}...")
         reindex_status.update({
-            "message": "Indexing codebase...",
+            "message": f"Indexing {repo_name} codebase...",
             "progress": 50
         })
         
@@ -172,20 +174,26 @@ async def run_reindex_background():
                 if reindex_status["status"] == "running":
                     current_time = datetime.utcnow().isoformat()
                     reindex_status.update({
-                        "message": f"Still indexing... (last update: {current_time})",
+                        "message": f"Still indexing {repo_name}... (last update: {current_time})",
                         "progress": 50
                     })
-                    print(f"[Reindex] 🔄 Still processing files... (alive check)")
+                    print(f"[Reindex] 🔄 Still processing {repo_name} files... (alive check)")
         
         # Start progress updater in background
         progress_task = asyncio.create_task(asyncio.to_thread(update_indexing_progress))
         
         try:
-            # Run indexing in thread pool
+            # Run indexing in thread pool - you'll need to modify index_codebase.walk_and_index 
+            # to accept a specific repository parameter
             start_time = time.time()
-            await asyncio.to_thread(index_codebase.walk_and_index)
+            
+            # Check if your index_codebase.walk_and_index function can accept a repo parameter
+            # If not, you might need to modify it or create a new function
+            # For now, assuming it can accept a repository list:
+            await asyncio.to_thread(index_codebase.walk_and_index, repositories=[repo_name])
+            
             index_duration = time.time() - start_time
-            print(f"[Reindex] ✅ Codebase indexed in {index_duration:.1f}s")
+            print(f"[Reindex] ✅ Repository {repo_name} indexed in {index_duration:.1f}s")
         finally:
             # Cancel progress updater
             progress_task.cancel()
@@ -195,56 +203,70 @@ async def run_reindex_background():
                 pass
         
         # Step 3: Save vector store
-        print("[Reindex] 💾 Saving vector store...")
+        print(f"[Reindex] 💾 Saving vector store for {repo_name}...")
         reindex_status.update({
-            "message": "Saving vector store...",
+            "message": f"Saving vector store for {repo_name}...",
             "progress": 90
         })
         
         start_time = time.time()
         force_save()
         save_duration = time.time() - start_time
-        print(f"[Reindex] ✅ Vector store saved in {save_duration:.1f}s")
+        print(f"[Reindex] ✅ Vector store for {repo_name} saved in {save_duration:.1f}s")
         
         # Complete
         reindex_status.update({
             "status": "completed",
-            "message": "✅ Reindex completed successfully",
-            "progress": 100
+            "repo_name": repo_name,
+            "message": f"✅ Reindex completed successfully for {repo_name}",
+            "progress": 100,
+            "completed_at": datetime.utcnow().isoformat()
         })
         
-        print("[Reindex] 🎉 Reindex completed successfully")
+        print(f"[Reindex] 🎉 Reindex completed successfully for {repo_name}")
         
     except Exception as e:
-        error_msg = f"❌ Reindex failed: {str(e)}"
+        error_msg = f"❌ Reindex failed for {repo_name}: {str(e)}"
         reindex_status.update({
             "status": "failed",
+            "repo_name": repo_name,
             "message": error_msg,
-            "progress": 0
+            "progress": 0,
+            "error": str(e),
+            "failed_at": datetime.utcnow().isoformat()
         })
         print(f"[Reindex] {error_msg}")
         print(f"[Reindex] Error details: {repr(e)}")  # More detailed error info
 
 # Reindex endpoint
 @app.post("/reindex")
-async def reindex():
+async def reindex(request: dict):
     """Start reindex operation in background and return immediately"""
     global reindex_status
+    
+    # Extract repository name from request
+    repo_name = request.get("repo_name")
+    if not repo_name:
+        return {
+            "status": "error",
+            "message": "Repository name is required"
+        }
 
     # Check if already running
     if reindex_status["status"] == "running":
         return {
-            "status": "already_running",
-            "message": "Reindex operation already in progress",
+            "status": "already_running", 
+            "message": f"Reindex operation already in progress for {reindex_status.get('repo_name', 'unknown repo')}",
             "current_status": reindex_status
         }
 
-    # Start background task
-    asyncio.create_task(run_reindex_background())
+    # Start background task with specified repository
+    asyncio.create_task(run_reindex_background(repo_name))
 
     return {
         "status": "started",
-        "message": "🚀 Reindex operation started in background",
+        "message": f"🚀 Reindex operation started in background for {repo_name}",
+        "repo_name": repo_name,
         "check_status_at": "/reindex/status"
     }
 

@@ -21,6 +21,12 @@ for env_path in env_paths:
     if env_path.exists():
         load_dotenv(env_path)
         break
+else:
+    print("No .env file found, trying default load_dotenv()")
+    load_dotenv()
+
+# Debug: Print what was loaded
+print(f"GITHUB_PAT loaded: {'✅' if os.getenv('GITHUB_PAT') else '❌'}")
 
 # Validate required environment variables
 REQUIRED_ENV_VARS = ["GITHUB_PAT"]

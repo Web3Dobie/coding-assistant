@@ -128,7 +128,7 @@ def sync_repos(repositories: List[Dict[str, str]], token: str = None):
 async def run_reindex_background():
     """Run reindex operation in the background"""
     global reindex_status
-
+    
     try:
         reindex_status.update({
             "status": "running",
@@ -136,46 +136,51 @@ async def run_reindex_background():
             "message": "Starting reindex operation...",
             "progress": 0
         })
-
+        
         print("[Reindex] Starting codebase reindexing...")
-
-        # Step 1: Sync repositories
+        
+        # Get GITHUB_PAT from environment
+        github_pat = os.getenv("GITHUB_PAT")
+        if not github_pat:
+            raise ValueError("GITHUB_PAT environment variable not found")
+        
+        # Step 1: Sync repositories with PAT
         reindex_status.update({
             "message": "Syncing repositories...",
             "progress": 10
         })
-
-        await asyncio.to_thread(sync_repos, REPOSITORIES, GITHUB_PAT)
+        
+        # Pass the PAT and repositories to sync function
+        await asyncio.to_thread(github_sync.sync_repos, REPOSITORIES, github_pat)
         print("[Reindex] Repositories synced")
-
+        
         # Step 2: Index codebase
         reindex_status.update({
             "message": "Indexing codebase...",
             "progress": 50
         })
-
-        # Placeholder for indexing logic
-        # await asyncio.to_thread(index_codebase.walk_and_index)
+        
+        # Run indexing in thread pool
+        await asyncio.to_thread(index_codebase.walk_and_index)
         print("[Reindex] Codebase indexed")
-
+        
         # Step 3: Save vector store
         reindex_status.update({
             "message": "Saving vector store...",
             "progress": 90
         })
-
-        # Placeholder for saving logic
-        # force_save()
-
+        
+        force_save()
+        
         # Complete
         reindex_status.update({
             "status": "completed",
             "message": "✅ Reindex completed successfully",
             "progress": 100
         })
-
+        
         print("[Reindex] ✅ Reindex completed successfully")
-
+        
     except Exception as e:
         error_msg = f"❌ Reindex failed: {str(e)}"
         reindex_status.update({

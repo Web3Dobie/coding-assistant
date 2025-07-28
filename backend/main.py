@@ -303,6 +303,23 @@ async def get_file(file_path: str):
 async def health_check():
     """Basic health check endpoint"""
     return {"status": "healthy", "timestamp": datetime.utcnow().isoformat()}
+
+@app.get("/repositories")
+async def get_repositories():
+    """Get list of available repositories"""
+    try:
+        return {
+            "repositories": [repo["name"] for repo in REPOSITORIES],
+            "count": len(REPOSITORIES)
+        }
+    except Exception as e:
+        print(f"Error loading repositories: {e}")
+        return {
+            "repositories": [],
+            "count": 0,
+            "error": str(e)
+        }
+        
 @app.post("/chat")
 async def chat(
     request: ChatRequest, 

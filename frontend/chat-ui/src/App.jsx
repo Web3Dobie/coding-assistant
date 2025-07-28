@@ -107,6 +107,30 @@ export default function App() {
           setMessages([...messages, { role: "system", content: `❌ Failed to refresh repository list.` }]);
         }
         setLoadingRepos(false);
+      } else if (command.startsWith("/reindex")) {
+        // Command to reindex repositories
+        const [, repoName] = command.split(" ");
+
+        if (!repoName) {
+          setMessages([...messages, { role: "system", content: `❌ Please specify a repository name. Usage: /reindex [repo_name]` }]);
+          return;
+        }
+
+        setMessages([...messages, { role: "system", content: `🔄 Starting reindex for repository: ${repoName}...` }]);
+
+        const response = await fetch(`${API_BASE_URL}/reindex`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ repo_name: repoName }),
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          setMessages([...messages, { role: "system", content: `✅ Successfully reindexed ${repoName}. ${data.message || 'Repository has been reindexed.'}` }]);
+        } else {
+          const error = await response.json();
+          setMessages([...messages, { role: "system", content: `❌ Failed to reindex ${repoName}: ${error.detail || 'Unknown error'}` }]);
+        }
       } else {
         setMessages([...messages, { role: "system", content: `Unknown command: ${command}` }]);
       }

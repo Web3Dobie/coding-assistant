@@ -18,6 +18,7 @@ from database import init_database, get_db, cleanup_old_conversations
 from chat_service import ChatService
 from sqlalchemy.ext.asyncio import AsyncSession
 from openai import AzureOpenAI
+from index_codebase import REPO_BASE_PATH
 
 # Load environment variables (only for local development)
 # Azure Container Apps provides these directly
@@ -426,10 +427,10 @@ async def ping_reindex():
 @app.get("/list-files")
 async def list_files(repo_name: str):
     """List all files in the specified repository."""
-    repo_path = os.path.join(REPO_CLONES_DIR, repo_name)
+    repo_path = os.path.join(REPO_BASE_PATH, repo_name)  # Change this line
     if not os.path.exists(repo_path):
         raise HTTPException(status_code=404, detail="Repository not found")
-
+        
     files = []
     for root, _, filenames in os.walk(repo_path):
         for filename in filenames:

@@ -154,8 +154,18 @@ async def run_reindex_background(repo_name: str):
         })
         
         start_time = time.time()
-        # Sync only the specified repository instead of all repositories
-        await asyncio.to_thread(github_sync.sync_repos, [repo_name], github_pat)
+        # Find the specific repository configuration from REPOSITORIES
+        target_repo = None
+        for repo in REPOSITORIES:
+            if repo["name"] == repo_name:
+                target_repo = repo
+                break
+        
+        if not target_repo:
+            raise ValueError(f"Repository '{repo_name}' not found in REPOSITORIES configuration")
+        
+        # Sync only the specified repository (pass as list of dict)
+        await asyncio.to_thread(github_sync.sync_repos, [target_repo], github_pat)
         sync_duration = time.time() - start_time
         print(f"[Reindex] ✅ Repository {repo_name} synced in {sync_duration:.1f}s")
         
@@ -237,7 +247,6 @@ async def run_reindex_background(repo_name: str):
         })
         print(f"[Reindex] {error_msg}")
         print(f"[Reindex] Error details: {repr(e)}")  # More detailed error info
-
 # Reindex endpoint
 @app.post("/reindex")
 async def reindex(request: dict):

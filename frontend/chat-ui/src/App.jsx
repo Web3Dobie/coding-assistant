@@ -117,14 +117,11 @@ export default function App() {
                   const data = await response.json();
                   // Check if this is a background operation start vs completion
                   if (data.message && (data.message.includes('started') || data.message.includes('background'))) {
-                    const scanMsg = { role: "system", content: `📂 Scanning all repositories...` };
-                    const processMsg = { role: "system", content: `⚡ Processing files and generating embeddings for all repositories...` };
-                    const startMsg = { role: "system", content: `🚀 Reindex started for all repositories! Monitoring progress...` };
-
-                    setMessages([...initialMessages, scanMsg, processMsg, startMsg]);
-
-                    // Start polling for completion if backend supports status endpoint
-                    checkReindexStatus("all repositories", initialMessages, scanMsg, processMsg);
+                    setMessages([...initialMessages,
+                    { role: "system", content: `📂 Scanning all repositories...` },
+                    { role: "system", content: `⚡ Processing files and generating embeddings for all repositories...` },
+                    { role: "system", content: `🚀 Reindex started for all repositories! Check logs for completion status.` }
+                    ]);
                   } else {
                     setMessages([...initialMessages,
                     { role: "system", content: `📂 Scanning all repositories...` },
@@ -278,14 +275,11 @@ export default function App() {
                 const data = await response.json();
                 // Check if this is a background operation start vs completion
                 if (data.message && (data.message.includes('started') || data.message.includes('background'))) {
-                  const scanMsg = { role: "system", content: `📂 Scanning repository: ${repoName}` };
-                  const processMsg = { role: "system", content: `⚡ Processing files and generating embeddings...` };
-                  const startMsg = { role: "system", content: `🚀 Reindex started for ${repoName}! Monitoring progress...` };
-
-                  setMessages([...initialMessages, scanMsg, processMsg, startMsg]);
-
-                  // Start polling for completion if backend supports status endpoint
-                  checkReindexStatus(repoName, initialMessages, scanMsg, processMsg);
+                  setMessages([...initialMessages,
+                  { role: "system", content: `📂 Scanning repository: ${repoName}` },
+                  { role: "system", content: `⚡ Processing files and generating embeddings...` },
+                  { role: "system", content: `🚀 Reindex started for ${repoName}! Check logs for completion status.` }
+                  ]);
                 } else {
                   setMessages([...initialMessages,
                   { role: "system", content: `📂 Scanning repository: ${repoName}` },

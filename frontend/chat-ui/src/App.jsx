@@ -52,6 +52,34 @@ export default function App() {
   const getTimestamp = () =>
     new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
+  // Function to check reindex status (add this before the onCommand function)
+  const checkReindexStatus = async (repoName, initialMessages, scanMessage, processMessage) => {
+    // Poll every 3 seconds to check if reindexing is complete
+    const pollInterval = setInterval(async () => {
+      try {
+        const statusResponse = await fetch(`${API_BASE_URL}/reindex-status?repo_name=${repoName}`);
+        if (statusResponse.ok) {
+          const statusData = await statusResponse.json();
+          if (statusData.complete) {
+            clearInterval(pollInterval);
+            setMessages([...initialMessages,
+              scanMessage,
+              processMessage,
+            { role: "system", content: `✅ Reindexing completed for ${repoName}! 🚀 Repository is now ready for queries.` }
+            ]);
+          }
+          // If still processing, we keep polling
+        }
+      } catch (error) {
+        // If status endpoint doesn't exist, just stop polling
+        clearInterval(pollInterval);
+      }
+    }, 3000);
+
+    // Stop polling after 2 minutes to avoid infinite polling
+    setTimeout(() => clearInterval(pollInterval), 120000);
+  };
+
   const onCommand = async (command) => {
     try {
       if (command.startsWith("/get-file")) {
@@ -65,7 +93,62 @@ export default function App() {
         if (!response.ok) {
           const error = await response.json();
           setMessages([...messages, { role: "system", content: `Error: ${error.detail}` }]);
-        } else {
+        } else if (command === "/reindex-all") {
+          // Command to reindex all repositories
+          const initialMessages = [...messages, { role: "system", content: `🔄 Starting reindex for ALL repositories...` }];
+          setMessages(initialMessages);
+
+          setTimeout(() => {
+            setMessages([...initialMessages, { role: "system", content: `📂 Scanning all repositories...` }]);
+
+            setTimeout(async () => {
+              setMessages([...initialMessages,
+              { role: "system", content: `📂 Scanning all repositories...` },
+              { role: "system", content: `⚡ Processing files and generating embeddings for all repositories...` }
+              ]);
+
+              try {
+                const response = await fetch(`${API_BASE_URL}/reindex-all`, {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                });
+
+                if (response.ok) {
+                  const data = await response.json();
+                  // Check if this is a background operation start vs completion
+                  if (data.message && (data.message.includes('started') || data.message.includes('background'))) {
+                    const scanMsg = { role: "system", content: `📂 Scanning all repositories...` };
+                    const processMsg = { role: "system", content: `⚡ Processing files and generating embeddings for all repositories...` };
+                    const startMsg = { role: "system", content: `🚀 Reindex started for all repositories! Monitoring progress...` };
+
+                    setMessages([...initialMessages, scanMsg, processMsg, startMsg]);
+
+                    // Start polling for completion if backend supports status endpoint
+                    checkReindexStatus("all repositories", initialMessages, scanMsg, processMsg);
+                  } else {
+                    setMessages([...initialMessages,
+                    { role: "system", content: `📂 Scanning all repositories...` },
+                    { role: "system", content: `⚡ Processing files and generating embeddings for all repositories...` },
+                    { role: "system", content: `✅ Successfully reindexed all repositories! ${data.message || '🚀 All repositories are now ready for queries.'}` }
+                    ]);
+                  }
+                } else {
+                  const error = await response.json();
+                  setMessages([...initialMessages,
+                  { role: "system", content: `📂 Scanning all repositories...` },
+                  { role: "system", content: `⚡ Processing files and generating embeddings for all repositories...` },
+                  { role: "system", content: `❌ Failed to reindex all repositories: ${error.detail || 'Unknown error occurred during indexing.'}` }
+                  ]);
+                }
+              } catch (error) {
+                setMessages([...initialMessages,
+                { role: "system", content: `📂 Scanning all repositories...` },
+                { role: "system", content: `⚡ Processing files and generating embeddings for all repositories...` },
+                { role: "system", content: `❌ Network error while reindexing all repositories: ${error.message}` }
+                ]);
+              }
+            }, 800);
+          }, 500);
           const fileContent = await response.text();
 
           const openAIResponse = await fetch(`${API_BASE_URL}/chat`, {
@@ -193,11 +276,23 @@ export default function App() {
 
               if (response.ok) {
                 const data = await response.json();
-                setMessages([...initialMessages,
-                { role: "system", content: `📂 Scanning repository: ${repoName}` },
-                { role: "system", content: `⚡ Processing files and generating embeddings...` },
-                { role: "system", content: `✅ Successfully reindexed ${repoName}! ${data.message || '🚀 Repository is now ready for queries.'}` }
-                ]);
+                // Check if this is a background operation start vs completion
+                if (data.message && (data.message.includes('started') || data.message.includes('background'))) {
+                  const scanMsg = { role: "system", content: `📂 Scanning repository: ${repoName}` };
+                  const processMsg = { role: "system", content: `⚡ Processing files and generating embeddings...` };
+                  const startMsg = { role: "system", content: `🚀 Reindex started for ${repoName}! Monitoring progress...` };
+
+                  setMessages([...initialMessages, scanMsg, processMsg, startMsg]);
+
+                  // Start polling for completion if backend supports status endpoint
+                  checkReindexStatus(repoName, initialMessages, scanMsg, processMsg);
+                } else {
+                  setMessages([...initialMessages,
+                  { role: "system", content: `📂 Scanning repository: ${repoName}` },
+                  { role: "system", content: `⚡ Processing files and generating embeddings...` },
+                  { role: "system", content: `✅ Successfully reindexed ${repoName}! ${data.message || '🚀 Repository is now ready for queries.'}` }
+                  ]);
+                }
               } else {
                 const error = await response.json();
                 setMessages([...initialMessages,

@@ -126,6 +126,7 @@ def sync_repos(repositories: List[Dict[str, str]], token: str = None):
                 print(f"[Sync Repos] Failed to clone {repo_name}: {e}")
 
 # Background task for reindexing
+# Background task for reindexing
 async def run_reindex_background(repo_name: str):
     """Run reindex operation in the background with detailed logging for specific repository"""
     global reindex_status
@@ -193,14 +194,9 @@ async def run_reindex_background(repo_name: str):
         progress_task = asyncio.create_task(asyncio.to_thread(update_indexing_progress))
         
         try:
-            # Run indexing in thread pool - you'll need to modify index_codebase.walk_and_index 
-            # to accept a specific repository parameter
+            # Run indexing in thread pool for specific repository only
             start_time = time.time()
-            
-            # Check if your index_codebase.walk_and_index function can accept a repo parameter
-            # If not, you might need to modify it or create a new function
-            # For now, assuming it can accept a repository list:
-            await asyncio.to_thread(index_codebase.walk_and_index, repositories=[repo_name])
+            await asyncio.to_thread(index_codebase.walk_and_index, [repo_name])
             
             index_duration = time.time() - start_time
             print(f"[Reindex] ✅ Repository {repo_name} indexed in {index_duration:.1f}s")
@@ -247,7 +243,132 @@ async def run_reindex_background(repo_name: str):
         })
         print(f"[Reindex] {error_msg}")
         print(f"[Reindex] Error details: {repr(e)}")  # More detailed error info
-# Reindex endpoint
+
+async def run_reindex_background_all():
+    """Run reindex operation for all repositories in the background"""
+    global reindex_status
+    
+    try:
+        reindex_status.update({
+            "status": "running",
+            "repo_name": "all repositories",
+            "started_at": datetime.utcnow().isoformat(),
+            "message": "Starting reindex operation for all repositories...",
+            "progress": 0
+        })
+        
+        print("[Reindex] 🚀 Starting codebase reindexing for ALL repositories")
+        
+        # Get GITHUB_PAT from environment
+        github_pat = os.getenv("GITHUB_PAT")
+        if not github_pat:
+            raise ValueError("GITHUB_PAT environment variable not found")
+        
+        # Step 1: Sync all repositories
+        print("[Reindex] 📥 Starting repository sync for all repositories...")
+        reindex_status.update({
+            "message": "Syncing all repositories...",
+            "progress": 10
+        })
+        
+        start_time = time.time()
+        await asyncio.to_thread(github_sync.sync_repos, REPOSITORIES, github_pat)
+        sync_duration = time.time() - start_time
+        print(f"[Reindex] ✅ All repositories synced in {sync_duration:.1f}s")
+        
+        # Step 2: Index all repositories
+        print("[Reindex] 📊 Starting codebase indexing for all repositories...")
+        reindex_status.update({
+            "message": "Indexing all repositories...",
+            "progress": 50
+        })
+        
+        # Progress updater (same as before)
+        def update_indexing_progress():
+            while reindex_status["status"] == "running" and reindex_status["progress"] < 90:
+                time.sleep(10)
+                if reindex_status["status"] == "running":
+                    current_time = datetime.utcnow().isoformat()
+                    reindex_status.update({
+                        "message": f"Still indexing all repositories... (last update: {current_time})",
+                        "progress": 50
+                    })
+                    print("[Reindex] 🔄 Still processing files from all repositories... (alive check)")
+        
+        progress_task = asyncio.create_task(asyncio.to_thread(update_indexing_progress))
+        
+        try:
+            start_time = time.time()
+            # Pass None to index all repositories
+            await asyncio.to_thread(index_codebase.walk_and_index, None)
+            index_duration = time.time() - start_time
+            print(f"[Reindex] ✅ All repositories indexed in {index_duration:.1f}s")
+        finally:
+            progress_task.cancel()
+            try:
+                await progress_task
+            except asyncio.CancelledError:
+                pass
+        
+        # Step 3: Save vector store
+        print("[Reindex] 💾 Saving vector store for all repositories...")
+        reindex_status.update({
+            "message": "Saving vector store for all repositories...",
+            "progress": 90
+        })
+        
+        start_time = time.time()
+        force_save()
+        save_duration = time.time() - start_time
+        print(f"[Reindex] ✅ Vector store for all repositories saved in {save_duration:.1f}s")
+        
+        # Complete
+        reindex_status.update({
+            "status": "completed",
+            "repo_name": "all repositories",
+            "message": "✅ Reindex completed successfully for all repositories",
+            "progress": 100,
+            "completed_at": datetime.utcnow().isoformat()
+        })
+        
+        print("[Reindex] 🎉 Reindex completed successfully for all repositories")
+        
+    except Exception as e:
+        error_msg = f"❌ Reindex failed for all repositories: {str(e)}"
+        reindex_status.update({
+            "status": "failed",
+            "repo_name": "all repositories",
+            "message": error_msg,
+            "progress": 0,
+            "error": str(e),
+            "failed_at": datetime.utcnow().isoformat()
+        })
+        print(f"[Reindex] {error_msg}")
+        print(f"[Reindex] Error details: {repr(e)}")
+
+# Reindex endpoints
+@app.post("/reindex-all")
+async def reindex_all_repositories():
+    """Start reindex operation for ALL repositories in background and return immediately"""
+    global reindex_status
+
+    # Check if already running
+    if reindex_status["status"] == "running":
+        return {
+            "status": "already_running",
+            "message": f"Reindex operation already in progress for {reindex_status.get('repo_name', 'unknown repo')}",
+            "current_status": reindex_status
+        }
+
+    # Start background task for all repositories (pass None to index all)
+    asyncio.create_task(run_reindex_background_all())
+
+    return {
+        "status": "started",
+        "message": "🚀 Reindex operation started in background for all repositories",
+        "check_status_at": "/reindex/status"
+    }
+
 @app.post("/reindex")
 async def reindex(request: dict):
     """Start reindex operation in background and return immediately"""

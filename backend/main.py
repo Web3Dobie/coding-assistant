@@ -246,9 +246,11 @@ async def run_reindex_background(repo_name: str):
 
 async def run_reindex_background_all():
     """Run reindex operation for all repositories in the background"""
+    print(f"🐛 DEBUG: run_reindex_background called with repo_name: {repo_name}")
     global reindex_status
     
     try:
+        print(f"🐛 DEBUG: About to update reindex_status")
         reindex_status.update({
             "status": "running",
             "repo_name": "all repositories",
@@ -376,6 +378,8 @@ async def reindex(request: dict):
     
     # Extract repository name from request
     repo_name = request.get("repo_name")
+    print(f"🐛 DEBUG: Received reindex request for: {repo_name}")  # Add this
+    
     if not repo_name:
         return {
             "status": "error",
@@ -390,8 +394,11 @@ async def reindex(request: dict):
             "current_status": reindex_status
         }
 
+    print(f"🐛 DEBUG: Starting background task for: {repo_name}")  # Add this
+    
     # Start background task with specified repository
-    asyncio.create_task(run_reindex_background(repo_name))
+    task = asyncio.create_task(run_reindex_background(repo_name))
+    print(f"🐛 DEBUG: Background task created: {task}")  # Add this
 
     return {
         "status": "started",

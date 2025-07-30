@@ -129,7 +129,6 @@ def sync_repos(repositories: List[Dict[str, str]], token: str = None):
                 print(f"[Sync Repos] Failed to clone {repo_name}: {e}")
 
 # Background task for reindexing
-# Background task for reindexing
 async def run_reindex_background(repo_name: str):
     """Run reindex operation in the background with detailed logging for specific repository"""
     global reindex_status
@@ -249,7 +248,7 @@ async def run_reindex_background(repo_name: str):
 
 async def run_reindex_background_all():
     """Run reindex operation for all repositories in the background"""
-    print(f"🐛 DEBUG: run_reindex_background called with repo_name: {repo_name}")
+    print(f"🐛 DEBUG: run_reindex_background_all called for ALL repositories")
     global reindex_status
     
     try:
@@ -591,3 +590,5 @@ if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
+
+#force git update

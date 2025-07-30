@@ -220,15 +220,30 @@ export default function App() {
         setMessages([...messages, { role: "system", content: `🗑️ Removed attachment: ${removedFile.path}` }]);
       } else if (command.startsWith("/list-files")) {
         const [, repoName] = command.split(" ");
-        const response = await fetch(`${API_BASE_URL}/list-files?repo_name=${repoName}`);
+        const targetRepo = repoName || project;
+
+        if (!targetRepo) {
+          setMessages([...messages, { role: "system", content: `❌ Please specify a repository name or select a current project.` }]);
+          return;
+        }
+
+        const response = await fetch(`${API_BASE_URL}/list-files?repo_name=${targetRepo}&format=tree`);
 
         if (!response.ok) {
           const error = await response.json();
           setMessages([...messages, { role: "system", content: `Error: ${error.detail}` }]);
         } else {
           const data = await response.json();
-          const fileList = data.files.join("\n");
-          setMessages([...messages, { role: "system", content: `Files in ${repoName}:\n${fileList}` }]);
+          if (data.format === "tree" && data.tree) {
+            setMessages([...messages, {
+              role: "system",
+              content: `📁 **File structure for ${targetRepo}:**\n\n\`\`\`\n${data.tree}\n\`\`\``
+            }]);
+          } else if (data.files) {
+            // Fallback to list format
+            const fileList = data.files.join("\n");
+            setMessages([...messages, { role: "system", content: `Files in ${targetRepo}:\n${fileList}` }]);
+          }
         }
       } else if (command === "/refresh-repos") {
         setLoadingRepos(true);

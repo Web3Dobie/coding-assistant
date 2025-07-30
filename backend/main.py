@@ -92,6 +92,128 @@ class ChatRequest(BaseModel):
     project: str
     messages: List[Message]
 
+def build_tree_structure(repo_path: str, max_depth: int = 4, ignore_dirs: set = None) -> dict:
+    """Build a tree structure of the repository"""
+    if ignore_dirs is None:
+        ignore_dirs = {'.git', '__pycache__', 'node_modules', '.venv', 'venv', '.env', 
+                      'dist', 'build', '.next', 'target', 'bin', 'obj', '.DS_Store'}
+    
+    def should_ignore(name: str, is_dir: bool) -> bool:
+        """Check if file/directory should be ignored"""
+        if name.startswith('.') and name not in {'.env', '.gitignore', '.github'}:
+            return True
+        if is_dir and name in ignore_dirs:
+            return True
+        return False
+    
+    def build_node(path: Path, current_depth: int = 0) -> dict:
+        """Recursively build tree node"""
+        if current_depth > max_depth:
+            return {"type": "directory", "name": path.name, "truncated": True}
+        
+        try:
+            if path.is_file():
+                return {
+                    "type": "file",
+                    "name": path.name,
+                    "size": path.stat().st_size
+                }
+            elif path.is_dir():
+                children = []
+                try:
+                    # Get and sort directory contents
+                    entries = sorted(path.iterdir(), key=lambda x: (x.is_file(), x.name.lower()))
+                    
+                    for entry in entries:
+                        if should_ignore(entry.name, entry.is_dir()):
+                            continue
+                        
+                        child = build_node(entry, current_depth + 1)
+                        if child:
+                            children.append(child)
+                        
+                        # Limit children to prevent huge trees
+                        if len(children) >= 50:
+                            children.append({"type": "truncated", "name": f"... ({len(list(path.iterdir())) - len(children)} more items)"})
+                            break
+                
+                except PermissionError:
+                    return {"type": "directory", "name": path.name, "error": "Permission denied"}
+                
+                return {
+                    "type": "directory", 
+                    "name": path.name,
+                    "children": children
+                }
+        except (OSError, PermissionError):
+            return None
+    
+    repo_path_obj = Path(repo_path)
+    if not repo_path_obj.exists():
+        return {"error": "Repository not found"}
+    
+    tree = build_node(repo_path_obj)
+    return tree or {"error": "Unable to read repository"}
+
+def tree_to_string(tree: dict, prefix: str = "", is_last: bool = True, max_lines: int = 200) -> str:
+    """Convert tree structure to string representation"""
+    lines = []
+    
+    def add_node(node: dict, prefix: str, is_last: bool, current_lines: list) -> None:
+        if len(current_lines) >= max_lines:
+            current_lines.append(f"{prefix}... (truncated, showing first {max_lines} items)")
+            return
+        
+        if node.get("error"):
+            current_lines.append(f"{prefix}❌ {node.get('name', 'Unknown')} - {node['error']}")
+            return
+        
+        if node.get("truncated"):
+            current_lines.append(f"{prefix}📁 {node['name']} (too deep)")
+            return
+        
+        if node.get("type") == "truncated":
+            current_lines.append(f"{prefix}{node['name']}")
+            return
+        
+        # Choose appropriate symbol
+        if node["type"] == "directory":
+            symbol = "📁" if node.get("children") else "📂"
+            connector = "└── " if is_last else "├── "
+            current_lines.append(f"{prefix}{connector}{symbol} {node['name']}/")
+            
+            # Add children
+            children = node.get("children", [])
+            for i, child in enumerate(children):
+                child_is_last = i == len(children) - 1
+                child_prefix = prefix + ("    " if is_last else "│   ")
+                add_node(child, child_prefix, child_is_last, current_lines)
+        
+        else:  # file
+            connector = "└── " if is_last else "├── "
+            size_info = ""
+            if "size" in node:
+                size = node["size"]
+                if size > 1024 * 1024:
+                    size_info = f" ({size // (1024 * 1024)}MB)"
+                elif size > 1024:
+                    size_info = f" ({size // 1024}KB)"
+            
+            current_lines.append(f"{prefix}{connector}📄 {node['name']}{size_info}")
+    
+    if tree.get("error"):
+        return f"❌ Error: {tree['error']}"
+    
+    # Start with root
+    lines.append(f"📁 {tree['name']}/")
+    
+    children = tree.get("children", [])
+    for i, child in enumerate(children):
+        child_is_last = i == len(children) - 1
+        add_node(child, "", child_is_last, lines)
+    
+    return "\n".join(lines)
+
 # Utility function to modify repository URL for authentication
 def get_authenticated_repo_url(repo_url: str, token: str) -> str:
     """Modify the repository URL to include authentication."""
@@ -426,18 +548,52 @@ async def ping_reindex():
 
 # List files in a repository
 @app.get("/list-files")
-async def list_files(repo_name: str):
-    """List all files in the specified repository."""
-    repo_path = os.path.join(REPO_BASE_PATH, repo_name)  # Change this line
+async def list_files(repo_name: str, format: str = "tree"):
+    """List all files in the specified repository with tree structure."""
+    repo_path = os.path.join(REPO_BASE_PATH, repo_name)
     if not os.path.exists(repo_path):
         raise HTTPException(status_code=404, detail="Repository not found")
+    
+    if format == "tree":
+        try:
+            tree = build_tree_structure(repo_path)
+            tree_string = tree_to_string(tree)
+            
+            return {
+                "repository": repo_name,
+                "format": "tree",
+                "tree": tree_string,
+                "structure": tree  # Also include raw structure for potential frontend use
+            }
         
-    files = []
-    for root, _, filenames in os.walk(repo_path):
-        for filename in filenames:
-            files.append(os.path.relpath(os.path.join(root, filename), repo_path))
-
-    return {"files": files}
+        except Exception as e:
+            # Fallback to simple list if tree generation fails
+            files = []
+            for root, _, filenames in os.walk(repo_path):
+                for filename in filenames:
+                    rel_path = os.path.relpath(os.path.join(root, filename), repo_path)
+                    files.append(rel_path)
+            
+            return {
+                "repository": repo_name,
+                "format": "list", 
+                "files": files,
+                "error": f"Tree generation failed: {str(e)}"
+            }
+    
+    else:
+        # Original flat list format
+        files = []
+        for root, _, filenames in os.walk(repo_path):
+            for filename in filenames:
+                rel_path = os.path.relpath(os.path.join(root, filename), repo_path)
+                files.append(rel_path)
+        
+        return {
+            "repository": repo_name,
+            "format": "list",
+            "files": files
+        }
 
 # Get file contents
 @app.post("/get-file")

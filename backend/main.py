@@ -43,6 +43,8 @@ missing_vars = [var for var in REQUIRED_ENV_VARS if not os.getenv(var)]
 if missing_vars:
     raise ValueError(f"Missing required environment variables: {', '.join(missing_vars)}")
 
+REPO_CLONES_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "data", "repo_clones"))
+
 # Load repositories from configuration file
 REPOSITORIES_CONFIG_PATH = Path(__file__).parent / "repositories.json"
 

@@ -442,19 +442,20 @@ export default function App() {
   };
 
   return (
-    <div className="h-screen w-screen bg-gray-50 flex items-center justify-center">
-      <div className="w-full max-w-2xl h-[90vh] flex flex-col border rounded-xl shadow bg-white overflow-hidden">
-        {/* Header with Project Selector */}
-        <header className="p-4 border-b text-center bg-gray-100 flex items-center justify-between">
-          <h1 className="text-lg font-semibold">💬 HtD Coding Assistant</h1>
-          <div className="flex items-center gap-2">
+    <div className="h-screen w-screen bg-gray-100 flex">
+      {/* Sidebar for attachments and controls */}
+      <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
+        {/* Header */}
+        <header className="p-4 border-b border-gray-200">
+          <h1 className="text-lg font-semibold text-gray-900 mb-3">💬 Coding Assistant</h1>
+          <div className="space-y-2">
             {loadingRepos ? (
               <div className="text-sm text-gray-500">Loading repositories...</div>
             ) : (
               <select
                 value={project}
                 onChange={(e) => setProject(e.target.value)}
-                className="border border-gray-300 rounded px-2 py-1 text-sm"
+                className="w-full border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                 disabled={repositories.length === 0}
               >
                 {repositories.length === 0 ? (
@@ -470,84 +471,164 @@ export default function App() {
             )}
             <button
               onClick={() => onCommand("/refresh-repos")}
-              className="text-xs bg-blue-100 hover:bg-blue-200 px-2 py-1 rounded text-blue-700"
+              className="w-full text-sm bg-gray-100 hover:bg-gray-200 px-3 py-2 rounded-md text-gray-700 transition-colors"
               disabled={loadingRepos}
-              title="Refresh repository list"
             >
-              🔄
+              🔄 Refresh Repositories
             </button>
           </div>
         </header>
 
-        {/* Attachment indicator */}
-        {attachedFiles.length > 0 && (
-          <div className="px-4 py-2 bg-blue-50 border-b border-blue-200 text-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-blue-700">
-                📎 {attachedFiles.length} file(s) attached - Your next message will include them as context
-              </span>
-              <button
-                onClick={() => onCommand("/clear-attachments")}
-                className="text-blue-600 hover:text-blue-800 underline text-xs"
-              >
-                Clear all
-              </button>
+        {/* Attached Files Panel */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-medium text-gray-900">Attached Files</h3>
+              {attachedFiles.length > 0 && (
+                <button
+                  onClick={() => onCommand("/clear-attachments")}
+                  className="text-xs text-red-600 hover:text-red-800"
+                >
+                  Clear all
+                </button>
+              )}
             </div>
-            <div className="mt-2 space-y-1">
-              {attachedFiles.map((file, idx) => (
-                <div key={idx} className="flex items-center justify-between bg-white rounded px-2 py-1 border border-blue-200">
-                  <span className="text-xs text-gray-700 truncate flex-1" title={file.path}>
-                    {file.path}
-                  </span>
-                  <button
-                    onClick={() => onCommand(`/remove-attachment ${idx + 1}`)}
-                    className="ml-2 text-red-600 hover:text-red-800 text-xs"
-                    title="Remove this file"
-                  >
-                    ✕
-                  </button>
-                </div>
-              ))}
-            </div>
+
+            {attachedFiles.length === 0 ? (
+              <div className="text-sm text-gray-500 text-center py-8">
+                No files attached
+                <div className="text-xs mt-1">Use /attach-file to add files</div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {attachedFiles.map((file, idx) => (
+                  <div key={idx} className="group flex items-center gap-2 p-2 bg-gray-50 rounded-md border border-gray-200 hover:bg-gray-100">
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-medium text-gray-900 truncate" title={file.path}>
+                        {file.path.split('/').pop()}
+                      </div>
+                      <div className="text-xs text-gray-500 truncate">
+                        {file.path}
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => onCommand(`/remove-attachment ${idx + 1}`)}
+                      className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-700 transition-opacity"
+                      title="Remove this file"
+                    >
+                      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-        )}
+        </div>
 
-        {/* Message List */}
-        <main className="flex-1 overflow-y-auto p-4 space-y-4">
-          {messages.map((msg, idx) => (
-            <Message
-              key={idx}
-              role={msg.role}
-              content={msg.content}
-              timestamp={msg.timestamp}
-            />
-          ))}
-          <div ref={messagesEndRef} />
-        </main>
-
-        {/* Input Form */}
-        <footer className="p-4 border-t bg-white">
-          <form onSubmit={handleSubmit} className="flex gap-2 w-full">
-            <textarea
-              ref={textareaRef}
-              rows={1}
-              className="flex-1 px-4 py-2 border border-gray-300 rounded-md resize-none"
-              placeholder={`Type your message... (Project: ${project || 'Loading...'})`}
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              style={{ lineHeight: "24px" }}
-              disabled={!project}
-            />
+        {/* Quick Commands */}
+        <div className="p-4 border-t border-gray-200">
+          <h4 className="text-sm font-medium text-gray-900 mb-2">Quick Commands</h4>
+          <div className="grid grid-cols-2 gap-2 text-xs">
             <button
-              type="submit"
-              className="bg-blue-600 text-white px-4 py-2 rounded hover:bg-blue-700 disabled:bg-gray-400"
+              onClick={() => setInput('/help')}
+              className="p-2 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 transition-colors"
+            >
+              📖 Help
+            </button>
+            <button
+              onClick={() => setInput('/list-files ' + project)}
+              className="p-2 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 transition-colors"
               disabled={!project}
             >
-              Send
+              📁 List Files
             </button>
-          </form>
-          <div className="text-xs text-gray-500 mt-1">
-            Commands: /attach-file [repo]/[file], /list-files [repo], /reindex-all, /help
+            <button
+              onClick={() => setInput('/reindex ' + project)}
+              className="p-2 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 transition-colors"
+              disabled={!project}
+            >
+              🔄 Reindex
+            </button>
+            <button
+              onClick={() => setInput('/reindex-all')}
+              className="p-2 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 transition-colors"
+            >
+              🔄 Reindex All
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* Main chat area */}
+      <div className="flex-1 flex flex-col bg-white">
+        {/* Chat messages */}
+        <main className="flex-1 overflow-y-auto p-6">
+          <div className="max-w-4xl mx-auto space-y-6">
+            {messages.length === 0 ? (
+              <div className="text-center py-12">
+                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-orange-400 to-pink-400 flex items-center justify-center text-white text-2xl font-semibold">
+                  AI
+                </div>
+                <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                  Welcome to your Coding Assistant
+                </h2>
+                <p className="text-gray-600 mb-4">
+                  Ask questions about your code, attach files for analysis, or use commands to manage your repositories.
+                </p>
+                <div className="text-sm text-gray-500">
+                  Try typing <code className="bg-gray-100 px-1 rounded">/help</code> to see available commands
+                </div>
+              </div>
+            ) : (
+              messages.map((msg, idx) => (
+                <Message
+                  key={idx}
+                  role={msg.role}
+                  content={msg.content}
+                  timestamp={msg.timestamp}
+                />
+              ))
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+        </main>
+
+        {/* Input area */}
+        <footer className="border-t border-gray-200 p-4">
+          <div className="max-w-4xl mx-auto">
+            {attachedFiles.length > 0 && (
+              <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-md">
+                <div className="text-xs text-blue-700">
+                  📎 {attachedFiles.length} file(s) will be included with your message
+                </div>
+              </div>
+            )}
+            <form onSubmit={handleSubmit} className="flex gap-3">
+              <textarea
+                ref={textareaRef}
+                rows={1}
+                className="flex-1 px-4 py-3 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder={`Ask a question about ${project || 'your code'}...`}
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                style={{ lineHeight: "24px" }}
+                disabled={!project}
+              />
+              <button
+                type="submit"
+                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                disabled={!project || !input.trim()}
+              >
+                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                </svg>
+              </button>
+            </form>
+            <div className="text-xs text-gray-500 mt-2 text-center">
+              Use <code className="bg-gray-100 px-1 rounded">/attach-file [repo]/[file]</code> to attach files, or <code className="bg-gray-100 px-1 rounded">/help</code> for all commands
+            </div>
           </div>
         </footer>
       </div>

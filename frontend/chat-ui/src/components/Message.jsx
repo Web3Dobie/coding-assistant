@@ -72,18 +72,102 @@ const highlightCode = (code, language) => {
     return highlighted;
 };
 
-// Process message content to detect file content vs regular code blocks
-const processMessageContent = (content) => {
-    // For the conversation view, we don't want to show artifacts as separate blocks
-    // The artifact detection happens in the useEffect hook below
+// Check if content should create an artifact
+const shouldCreateArtifact = (content) => {
+    // Check for complete files
+    const fileHeaderRegex = /^(Here's a detailed .*?\.(\w+) file|Here's the .*?\.(\w+) file|Here's your .*?\.(\w+) file)/i;
+    const fileMatch = content.match(fileHeaderRegex);
 
-    // Regular message processing for code blocks
+    if (fileMatch) {
+        const codeBlockMatch = content.match(/```[\w]*\n([\s\S]*?)```/);
+        if (codeBlockMatch) {
+            return true;
+        }
+    }
+
+    // Check for substantial code blocks (>20 lines)
+    const codeBlocks = content.match(/```(\w+)?\n([\s\S]*?)```/g);
+    if (codeBlocks) {
+        for (let i = 0; i < codeBlocks.length; i++) {
+            const block = codeBlocks[i];
+            const match = block.match(/```(\w+)?\n([\s\S]*?)```/);
+            if (match && match[2].split('\n').length > 20) {
+                return true;
+            }
+        }
+    }
+
+    // Check for long content that would benefit from artifact view
+    if (content.length > 2000 && content.includes('```')) {
+        return true;
+    }
+
+    return false;
+};
+
+// Process message content to separate text and code blocks, removing artifact content
+const processMessageContent = (content, hasArtifact = false) => {
+    if (hasArtifact) {
+        // If this message creates an artifact, we need to remove the large code block
+        // and replace it with an artifact card reference
+
+        // Check for complete files first
+        const fileHeaderRegex = /^(Here's a detailed .*?\.(\w+) file|Here's the .*?\.(\w+) file|Here's your .*?\.(\w+) file)/i;
+        const fileMatch = content.match(fileHeaderRegex);
+
+        if (fileMatch) {
+            // Remove the code block part and keep just the description
+            const beforeCodeBlock = content.substring(0, content.indexOf('```'));
+            const afterCodeBlock = content.substring(content.lastIndexOf('```') + 3);
+
+            return [{
+                type: 'text',
+                content: beforeCodeBlock.trim()
+            }, {
+                type: 'artifact_reference',
+                content: 'Artifact created - view in side panel →'
+            }, {
+                type: 'text',
+                content: afterCodeBlock.trim()
+            }].filter(part => part.content.length > 0);
+        }
+
+        // Check for substantial code blocks (>20 lines)
+        const codeBlocks = content.match(/```(\w+)?\n([\s\S]*?)```/g);
+        if (codeBlocks) {
+            for (let i = 0; i < codeBlocks.length; i++) {
+                const block = codeBlocks[i];
+                const match = block.match(/```(\w+)?\n([\s\S]*?)```/);
+                if (match && match[2].split('\n').length > 20) {
+                    // Replace this large code block with artifact reference
+                    const beforeBlock = content.substring(0, content.indexOf(block));
+                    const afterBlock = content.substring(content.indexOf(block) + block.length);
+
+                    return [{
+                        type: 'text',
+                        content: beforeBlock.trim()
+                    }, {
+                        type: 'artifact_reference',
+                        content: 'Artifact created - view in side panel →'
+                    }, {
+                        type: 'text',
+                        content: afterBlock.trim()
+                    }].filter(part => part.content.length > 0);
+                }
+            }
+        }
+    }
+
+    // Regular message processing for code blocks (small ones)
     const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
     const parts = [];
     let lastIndex = 0;
     let match;
 
     while ((match = codeBlockRegex.exec(content)) !== null) {
+        // Only include small code blocks (<=20 lines)
+        const lineCount = match[2].split('\n').length;
+
         // Add text before code block
         if (match.index > lastIndex) {
             parts.push({
@@ -92,12 +176,14 @@ const processMessageContent = (content) => {
             });
         }
 
-        // Add code block
-        parts.push({
-            type: 'code',
-            language: match[1] || 'text',
-            content: match[2].trim()
-        });
+        if (lineCount <= 20) {
+            // Add small code block
+            parts.push({
+                type: 'code',
+                language: match[1] || 'text',
+                content: match[2].trim()
+            });
+        }
 
         lastIndex = match.index + match[0].length;
     }
@@ -152,6 +238,31 @@ const CodeBlock = ({ code, language }) => {
     );
 };
 
+// Artifact reference card component
+const ArtifactCard = ({ onViewArtifact }) => {
+    return (
+        <div className="my-4 p-4 border border-blue-200 bg-blue-50 rounded-lg cursor-pointer hover:bg-blue-100 transition-colors"
+            onClick={onViewArtifact}>
+            <div className="flex items-center gap-3">
+                <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center text-white">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                    </svg>
+                </div>
+                <div className="flex-1">
+                    <div className="font-medium text-blue-900">Generated Content</div>
+                    <div className="text-sm text-blue-700">Click to view in artifact panel →</div>
+                </div>
+                <div className="text-blue-600">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
+                    </svg>
+                </div>
+            </div>
+        </div>
+    );
+};
+
 // Format regular text with proper Claude-style markdown formatting
 const formatText = (text) => {
     return text
@@ -170,11 +281,15 @@ const formatText = (text) => {
 };
 
 export default function Message({ role, content, timestamp, onArtifactCreate }) {
-    const parts = processMessageContent(content);
+    const [createdArtifact, setCreatedArtifact] = useState(null);
+
+    // Check if this message should create an artifact
+    const hasArtifact = shouldCreateArtifact(content);
+    const parts = processMessageContent(content, hasArtifact);
 
     // Check if this message should create an artifact
     useEffect(() => {
-        if (role === 'assistant' && onArtifactCreate) {
+        if (role === 'assistant' && onArtifactCreate && hasArtifact) {
             // Check for complete files
             const fileHeaderRegex = /^(Here's a detailed .*?\.(\w+) file|Here's the .*?\.(\w+) file|Here's your .*?\.(\w+) file)/i;
             const fileMatch = content.match(fileHeaderRegex);
@@ -192,6 +307,7 @@ export default function Message({ role, content, timestamp, onArtifactCreate }) 
                         language: getLanguageFromExtension(extension),
                         content: codeBlockMatch[1].trim()
                     };
+                    setCreatedArtifact(artifact);
                     onArtifactCreate(artifact);
                     return;
                 }
@@ -212,13 +328,14 @@ export default function Message({ role, content, timestamp, onArtifactCreate }) 
                             language: language,
                             content: match[2].trim()
                         };
+                        setCreatedArtifact(artifact);
                         onArtifactCreate(artifact);
                         return;
                     }
                 }
             }
         }
-    }, [content, role, onArtifactCreate]);
+    }, [content, role, onArtifactCreate, hasArtifact]);
 
     const getLanguageFromExtension = (ext) => {
         const languageMap = {
@@ -238,6 +355,12 @@ export default function Message({ role, content, timestamp, onArtifactCreate }) 
             'bash': 'bash'
         };
         return languageMap[ext.toLowerCase()] || ext;
+    };
+
+    const handleViewArtifact = () => {
+        if (createdArtifact && onArtifactCreate) {
+            onArtifactCreate(createdArtifact);
+        }
     };
 
     if (role === 'user') {
@@ -277,6 +400,8 @@ export default function Message({ role, content, timestamp, onArtifactCreate }) 
                                 code={part.content}
                                 language={part.language}
                             />
+                        ) : part.type === 'artifact_reference' ? (
+                            <ArtifactCard onViewArtifact={handleViewArtifact} />
                         ) : (
                             <div
                                 className="text-gray-900 leading-relaxed text-[15px]"

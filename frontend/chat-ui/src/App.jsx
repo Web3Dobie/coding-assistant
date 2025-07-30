@@ -60,7 +60,13 @@ export default function App() {
         const filePath = filePathParts.join(" ");
 
         if (!filePath) {
-          setMessages([...messages, { role: "system", content: `❌ Please specify a file path. Usage: /attach-file [path]` }]);
+          setMessages([...messages, { role: "system", content: `❌ Please specify a file path. Usage: /attach-file [repo]/[file_path]\nExample: /attach-file Trading-Bot/main.py` }]);
+          return;
+        }
+
+        // Check if path includes repo name (contains /)
+        if (!filePath.includes('/')) {
+          setMessages([...messages, { role: "system", content: `❌ File path must include repository name. Usage: /attach-file [repo]/[file_path]\nExample: /attach-file Trading-Bot/main.py` }]);
           return;
         }
 
@@ -329,7 +335,7 @@ export default function App() {
 
 **File Management:**
 • \`/list-files [repo]\` - List all files in a repository
-• \`/attach-file [path]\` - Attach a file for AI analysis
+• \`/attach-file [repo]/[file_path]\` - Attach a file for AI analysis
 • \`/list-attachments\` - Show currently attached files
 • \`/remove-attachment [number]\` - Remove specific attachment
 • \`/clear-attachments\` - Remove all attachments
@@ -338,16 +344,19 @@ export default function App() {
 • \`/refresh-repos\` - Refresh repository list
 • \`/reindex [repo]\` - Reindex specific repository
 • \`/reindex\` - Reindex current project
-• \`/reindex-all\` - Reindex all repositories
+• \`/reindex-all\` - Reindex all repositories (required on first use)
 
 **General:**
 • \`/help\` - Show this help message
 
+**Important:** Run \`/reindex-all\` first after deployment to clone repositories.
+
 **Workflow Example:**
-1. \`/list-files Trading-Bot\`
-2. \`/attach-file main.py\`
-3. \`/attach-file src/utils.py\`
-4. Ask your question - attached files will be included as context`;
+1. \`/reindex-all\` (first time setup)
+2. \`/list-files Trading-Bot\`
+3. \`/attach-file Trading-Bot/main.py\`
+4. \`/attach-file Trading-Bot/src/utils.py\`
+5. Ask your question - attached files will be included as context`;
 
         setMessages([...messages, { role: "system", content: helpText }]);
       } else {
@@ -519,7 +528,7 @@ export default function App() {
             </button>
           </form>
           <div className="text-xs text-gray-500 mt-1">
-            Commands: /attach-file, /list-files, /reindex, /help
+            Commands: /attach-file [repo]/[file], /list-files [repo], /reindex-all, /help
           </div>
         </footer>
       </div>

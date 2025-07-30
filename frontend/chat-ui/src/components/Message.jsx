@@ -18,7 +18,7 @@ const vsCodeTheme = {
     border: '#3c3c3c'
 };
 
-// Enhanced code highlighting with VS Code theme - improved bash support
+// Enhanced code highlighting with VS Code theme
 const highlightCode = (code, language) => {
     let highlighted = code;
 
@@ -38,7 +38,7 @@ const highlightCode = (code, language) => {
             .replace(/\b(\d+(?:\.\d+)?)\b/g, '<span style="color: #b5cea8;">$1</span>')
             .replace(/\/\/.*$/gm, '<span style="color: #6a9955; font-style: italic;">$&</span>')
             .replace(/\/\*[\s\S]*?\*\//g, '<span style="color: #6a9955; font-style: italic;">$&</span>')
-            .replace(/\b([A-Z][a-zA-Z0-9_]*)\b/g, '<span style="color: #4ec9b0;">$1</span>'); // Classes
+            .replace(/\b([A-Z][a-zA-Z0-9_]*)\b/g, '<span style="color: #4ec9b0;">$1</span>');
     } else if (language === 'python' || language === 'py') {
         highlighted = highlighted
             .replace(/\b(def|class|import|from|return|if|elif|else|for|while|try|except|with|as|async|await|lambda|yield|global|nonlocal)\b/g, '<span style="color: #569cd6; font-weight: bold;">$1</span>')
@@ -105,67 +105,35 @@ const shouldCreateArtifact = (content) => {
     return false;
 };
 
-// Process message content to separate text and code blocks, removing artifact content
+// Process message content and completely remove artifact code blocks
 const processMessageContent = (content, hasArtifact = false) => {
     if (hasArtifact) {
-        // If this message creates an artifact, we need to remove the large code block
-        // and replace it with an artifact card reference
+        // Remove ALL code blocks from artifact messages - don't show them in conversation
+        let processedContent = content;
 
-        // Check for complete files first
-        const fileHeaderRegex = /^(Here's a detailed .*?\.(\w+) file|Here's the .*?\.(\w+) file|Here's your .*?\.(\w+) file)/i;
-        const fileMatch = content.match(fileHeaderRegex);
+        // Remove code blocks completely
+        processedContent = processedContent.replace(/```[\w]*\n[\s\S]*?```/g, '');
 
-        if (fileMatch) {
-            // Remove the code block part and keep just the description
-            const beforeCodeBlock = content.substring(0, content.indexOf('```'));
-            const afterCodeBlock = content.substring(content.lastIndexOf('```') + 3);
+        // Clean up extra newlines
+        processedContent = processedContent.replace(/\n{3,}/g, '\n\n');
+        processedContent = processedContent.trim();
 
-            return [{
-                type: 'text',
-                content: beforeCodeBlock.trim()
-            }, {
-                type: 'artifact_reference',
-                content: 'Artifact created - view in side panel →'
-            }, {
-                type: 'text',
-                content: afterCodeBlock.trim()
-            }].filter(part => part.content.length > 0);
-        }
-
-        // Check for substantial code blocks (>20 lines)
-        const codeBlocks = content.match(/```(\w+)?\n([\s\S]*?)```/g);
-        if (codeBlocks) {
-            for (let i = 0; i < codeBlocks.length; i++) {
-                const block = codeBlocks[i];
-                const match = block.match(/```(\w+)?\n([\s\S]*?)```/);
-                if (match && match[2].split('\n').length > 20) {
-                    // Replace this large code block with artifact reference
-                    const beforeBlock = content.substring(0, content.indexOf(block));
-                    const afterBlock = content.substring(content.indexOf(block) + block.length);
-
-                    return [{
-                        type: 'text',
-                        content: beforeBlock.trim()
-                    }, {
-                        type: 'artifact_reference',
-                        content: 'Artifact created - view in side panel →'
-                    }, {
-                        type: 'text',
-                        content: afterBlock.trim()
-                    }].filter(part => part.content.length > 0);
-                }
-            }
-        }
+        return [{
+            type: 'text',
+            content: processedContent
+        }, {
+            type: 'artifact_reference',
+            content: ''  // Just show the card, no text
+        }];
     }
 
-    // Regular message processing for code blocks (small ones)
+    // For non-artifact messages, process normally but only show small code blocks
     const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
     const parts = [];
     let lastIndex = 0;
     let match;
 
     while ((match = codeBlockRegex.exec(content)) !== null) {
-        // Only include small code blocks (<=20 lines)
         const lineCount = match[2].split('\n').length;
 
         // Add text before code block
@@ -176,8 +144,8 @@ const processMessageContent = (content, hasArtifact = false) => {
             });
         }
 
-        if (lineCount <= 20) {
-            // Add small code block
+        // Only include small code blocks (<=10 lines)
+        if (lineCount <= 10) {
             parts.push({
                 type: 'code',
                 language: match[1] || 'text',
@@ -199,7 +167,7 @@ const processMessageContent = (content, hasArtifact = false) => {
     return parts.length > 0 ? parts : [{ type: 'text', content }];
 };
 
-// Regular code block component for inline display
+// Small code block component for inline display
 const CodeBlock = ({ code, language }) => {
     const [copied, setCopied] = useState(false);
 
@@ -212,14 +180,14 @@ const CodeBlock = ({ code, language }) => {
     const highlightedCode = highlightCode(code, language);
 
     return (
-        <div className="my-3 rounded-lg border border-gray-200 overflow-hidden bg-white shadow-sm">
-            <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200">
-                <span className="text-xs font-medium text-gray-600">{language || 'code'}</span>
+        <div className="my-3 rounded-md overflow-hidden bg-gray-50">
+            <div className="flex items-center justify-between px-3 py-2 bg-gray-100 text-xs">
+                <span className="font-medium text-gray-600">{language || 'code'}</span>
                 <button
                     onClick={copyToClipboard}
-                    className="flex items-center gap-1 px-2 py-1 text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-100 rounded transition-colors"
+                    className="text-gray-500 hover:text-gray-700 transition-colors"
                 >
-                    {copied ? '✓ Copied' : 'Copy'}
+                    {copied ? '✓' : 'Copy'}
                 </button>
             </div>
             <div
@@ -241,42 +209,29 @@ const CodeBlock = ({ code, language }) => {
 // Artifact reference card component
 const ArtifactCard = ({ onViewArtifact }) => {
     return (
-        <div className="my-4 p-4 border border-blue-200 bg-blue-50 rounded-lg cursor-pointer hover:bg-blue-100 transition-colors"
+        <div className="my-4 p-3 bg-blue-50 border border-blue-200 rounded-md cursor-pointer hover:bg-blue-100 transition-colors"
             onClick={onViewArtifact}>
             <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-500 rounded-lg flex items-center justify-center text-white">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
-                    </svg>
+                <div className="w-8 h-8 bg-blue-500 rounded-md flex items-center justify-center text-white text-sm">
+                    📄
                 </div>
                 <div className="flex-1">
-                    <div className="font-medium text-blue-900">Generated Content</div>
-                    <div className="text-sm text-blue-700">Click to view in artifact panel →</div>
-                </div>
-                <div className="text-blue-600">
-                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-                    </svg>
+                    <div className="text-sm font-medium text-blue-900">Generated Content</div>
+                    <div className="text-xs text-blue-600">View in side panel →</div>
                 </div>
             </div>
         </div>
     );
 };
 
-// Format regular text with proper Claude-style markdown formatting
+// Format regular text with minimal styling
 const formatText = (text) => {
     return text
-        // Bold text with ** markers
-        .replace(/\*\*(.*?)\*\*/g, '<strong class="font-semibold text-gray-900">$1</strong>')
-        // Italic text with * markers  
-        .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em class="italic text-gray-700">$1</em>')
-        // File paths and important code snippets in red background
-        .replace(/`([^`]+\.(js|jsx|ts|tsx|py|css|html|json|md|txt|yml|yaml|env|gitignore|dockerfile))`/gi, '<code class="bg-red-50 text-red-700 px-1.5 py-0.5 rounded text-sm font-mono border border-red-200">$1</code>')
-        // Commands starting with / in blue background
-        .replace(/`(\/[a-zA-Z-]+(?:\s+[^`]*)?)`/g, '<code class="bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded text-sm font-mono border border-blue-200">$1</code>')
-        // Regular inline code in gray background
-        .replace(/`([^`]+)`/g, '<code class="bg-gray-100 text-gray-800 px-1.5 py-0.5 rounded text-sm font-mono">$1</code>')
-        // Line breaks
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>')
+        .replace(/`([^`]+\.(js|jsx|ts|tsx|py|css|html|json|md|txt|yml|yaml|env|gitignore|dockerfile))`/gi, '<code class="bg-red-100 text-red-800 px-1 rounded text-sm font-mono">$1</code>')
+        .replace(/`(\/[a-zA-Z-]+(?:\s+[^`]*)?)`/g, '<code class="bg-blue-100 text-blue-800 px-1 rounded text-sm font-mono">$1</code>')
+        .replace(/`([^`]+)`/g, '<code class="bg-gray-100 text-gray-800 px-1 rounded text-sm font-mono">$1</code>')
         .replace(/\n/g, '<br>');
 };
 
@@ -287,7 +242,7 @@ export default function Message({ role, content, timestamp, onArtifactCreate }) 
     const hasArtifact = shouldCreateArtifact(content);
     const parts = processMessageContent(content, hasArtifact);
 
-    // Check if this message should create an artifact
+    // Create artifact when needed
     useEffect(() => {
         if (role === 'assistant' && onArtifactCreate && hasArtifact) {
             // Check for complete files
@@ -334,6 +289,19 @@ export default function Message({ role, content, timestamp, onArtifactCreate }) 
                     }
                 }
             }
+
+            // Long content
+            if (content.length > 2000 && content.includes('```')) {
+                const artifact = {
+                    id: `artifact-${Date.now()}`,
+                    type: 'document',
+                    title: 'Generated Content',
+                    language: 'markdown',
+                    content: content
+                };
+                setCreatedArtifact(artifact);
+                onArtifactCreate(artifact);
+            }
         }
     }, [content, role, onArtifactCreate, hasArtifact]);
 
@@ -365,13 +333,20 @@ export default function Message({ role, content, timestamp, onArtifactCreate }) 
 
     if (role === 'user') {
         return (
-            <div className="mb-8">
-                <div className="bg-gray-50 border border-gray-200 rounded-lg px-4 py-3 text-gray-900 leading-relaxed">
-                    {content}
+            <div className="mb-6">
+                <div className="flex items-start gap-3">
+                    <div className="w-7 h-7 rounded-full bg-blue-500 flex items-center justify-center text-white text-sm font-medium flex-shrink-0">
+                        U
+                    </div>
+                    <div className="flex-1 pt-1 min-w-0">
+                        <div className="text-gray-900 leading-relaxed break-words">
+                            {content}
+                        </div>
+                        {timestamp && (
+                            <div className="text-xs text-gray-400 mt-2">{timestamp}</div>
+                        )}
+                    </div>
                 </div>
-                {timestamp && (
-                    <div className="text-xs text-gray-400 mt-2">{timestamp}</div>
-                )}
             </div>
         );
     }
@@ -379,42 +354,45 @@ export default function Message({ role, content, timestamp, onArtifactCreate }) 
     if (role === 'system') {
         return (
             <div className="mb-4">
-                <div className="bg-amber-50 border border-amber-200 rounded-lg px-4 py-3">
-                    <div className="flex items-center gap-2">
-                        <span className="text-amber-600">⚠️</span>
-                        <span className="text-amber-800 text-sm">{content}</span>
-                    </div>
+                <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 px-3 py-2 rounded-md">
+                    <span>⚠️</span>
+                    <span>{content}</span>
                 </div>
             </div>
         );
     }
 
-    // AI messages - Claude style with proper formatting
+    // AI messages - clean style
     return (
-        <div className="mb-8">
-            <div className="prose prose-gray max-w-none">
-                {parts.map((part, index) => (
-                    <div key={index}>
-                        {part.type === 'code' ? (
-                            <CodeBlock
-                                code={part.content}
-                                language={part.language}
-                            />
-                        ) : part.type === 'artifact_reference' ? (
-                            <ArtifactCard onViewArtifact={handleViewArtifact} />
-                        ) : (
-                            <div
-                                className="text-gray-900 leading-relaxed text-[15px]"
-                                dangerouslySetInnerHTML={{
-                                    __html: formatText(part.content)
-                                }}
-                            />
-                        )}
-                    </div>
-                ))}
-                {timestamp && (
-                    <div className="text-xs text-gray-400 mt-6 pt-3 border-t border-gray-100">{timestamp}</div>
-                )}
+        <div className="mb-6">
+            <div className="flex items-start gap-3">
+                <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center text-white text-sm font-medium flex-shrink-0">
+                    AI
+                </div>
+                <div className="flex-1 pt-1 min-w-0">
+                    {parts.map((part, index) => (
+                        <div key={index}>
+                            {part.type === 'code' ? (
+                                <CodeBlock
+                                    code={part.content}
+                                    language={part.language}
+                                />
+                            ) : part.type === 'artifact_reference' ? (
+                                <ArtifactCard onViewArtifact={handleViewArtifact} />
+                            ) : part.content ? (
+                                <div
+                                    className="text-gray-900 leading-relaxed break-words"
+                                    dangerouslySetInnerHTML={{
+                                        __html: formatText(part.content)
+                                    }}
+                                />
+                            ) : null}
+                        </div>
+                    ))}
+                    {timestamp && (
+                        <div className="text-xs text-gray-400 mt-3">{timestamp}</div>
+                    )}
+                </div>
             </div>
         </div>
     );

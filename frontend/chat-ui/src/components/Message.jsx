@@ -175,10 +175,10 @@ export default function Message({ role, content, timestamp }) {
             <div className={`max-w-[80%] ${role === 'user' ? 'order-last' : ''}`}>
                 <div
                     className={`rounded-lg px-4 py-3 ${role === 'user'
-                            ? 'bg-blue-600 text-white ml-auto'
-                            : role === 'system'
-                                ? 'bg-yellow-50 border border-yellow-200 text-yellow-800'
-                                : 'bg-gray-50 border border-gray-200 text-gray-900'
+                        ? 'bg-blue-600 text-white ml-auto'
+                        : role === 'system'
+                            ? 'bg-yellow-50 border border-yellow-200 text-yellow-800'
+                            : 'bg-gray-50 border border-gray-200 text-gray-900'
                         }`}
                 >
                     {parts.map((part, index) => (
@@ -220,3 +220,5 @@ export default function Message({ role, content, timestamp }) {
         </div>
     );
 }
+
+// force push

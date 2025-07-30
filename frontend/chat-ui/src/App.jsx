@@ -8,6 +8,7 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [loadingRepos, setLoadingRepos] = useState(true);
+  const [attachedFiles, setAttachedFiles] = useState([]);
 
   const textareaRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -54,35 +55,68 @@ export default function App() {
 
   const onCommand = async (command) => {
     try {
-      if (command.startsWith("/get-file")) {
-        const [, filePath] = command.split(" ");
+      if (command.startsWith("/attach-file")) {
+        const [, ...filePathParts] = command.split(" ");
+        const filePath = filePathParts.join(" ");
+
+        if (!filePath) {
+          setMessages([...messages, { role: "system", content: `❌ Please specify a file path. Usage: /attach-file [path]` }]);
+          return;
+        }
+
         const response = await fetch(`${API_BASE_URL}/get-file`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ file_path: `/app/data/${filePath}` }),
+          body: JSON.stringify({ file_path: filePath }),
         });
 
         if (!response.ok) {
           const error = await response.json();
-          setMessages([...messages, { role: "system", content: `Error: ${error.detail}` }]);
+          setMessages([...messages, { role: "system", content: `Error: ${error.detail || JSON.stringify(error)}` }]);
         } else {
-          const fileContent = await response.text();
+          const data = await response.json();
 
-          const openAIResponse = await fetch(`${API_BASE_URL}/chat`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              project: "Your Project Name",
-              messages: [
-                { role: "system", content: `You are a coding assistant. Use the following file content for context:\n\n${fileContent}` },
-                { role: "user", content: "Please analyze this file." },
-              ],
-            }),
-          });
+          // Check if file is already attached
+          if (attachedFiles.some(f => f.path === data.file_path)) {
+            setMessages([...messages, { role: "system", content: `⚠️ File ${data.file_path} is already attached.` }]);
+            return;
+          }
 
-          const openAIResult = await openAIResponse.json();
-          setMessages([...messages, { role: "assistant", content: openAIResult.response }]);
+          // Add to attached files list
+          const newAttachment = {
+            path: data.file_path,
+            content: data.content,
+            attachedAt: new Date().toISOString()
+          };
+
+          setAttachedFiles(prev => [...prev, newAttachment]);
+          setMessages([...messages, {
+            role: "system",
+            content: `📎 Attached file: ${data.file_path} (${attachedFiles.length + 1} files attached)`
+          }]);
         }
+      } else if (command === "/list-attachments") {
+        if (attachedFiles.length === 0) {
+          setMessages([...messages, { role: "system", content: `📎 No files currently attached.` }]);
+        } else {
+          const fileList = attachedFiles.map((file, idx) => `${idx + 1}. ${file.path}`).join('\n');
+          setMessages([...messages, { role: "system", content: `📎 **Attached Files (${attachedFiles.length}):**\n${fileList}` }]);
+        }
+      } else if (command === "/clear-attachments") {
+        setAttachedFiles([]);
+        setMessages([...messages, { role: "system", content: `🗑️ Cleared all attached files.` }]);
+      } else if (command.startsWith("/remove-attachment")) {
+        const [, indexStr] = command.split(" ");
+        const index = parseInt(indexStr) - 1;
+
+        if (isNaN(index) || index < 0 || index >= attachedFiles.length) {
+          setMessages([...messages, { role: "system", content: `❌ Invalid attachment number. Use /list-attachments to see available files.` }]);
+          return;
+        }
+
+        const removedFile = attachedFiles[index];
+        setAttachedFiles(prev => prev.filter((_, i) => i !== index));
+        setMessages([...messages, { role: "system", content: `🗑️ Removed attachment: ${removedFile.path}` }]);
       } else if (command.startsWith("/list-files")) {
         const [, repoName] = command.split(" ");
         const response = await fetch(`${API_BASE_URL}/list-files?repo_name=${repoName}`);
@@ -290,8 +324,34 @@ export default function App() {
             }
           }, 800);
         }, 500);
+      } else if (command === "/help") {
+        const helpText = `**Available Commands:**
+
+**File Management:**
+• \`/list-files [repo]\` - List all files in a repository
+• \`/attach-file [path]\` - Attach a file for AI analysis
+• \`/list-attachments\` - Show currently attached files
+• \`/remove-attachment [number]\` - Remove specific attachment
+• \`/clear-attachments\` - Remove all attachments
+
+**Repository Management:**
+• \`/refresh-repos\` - Refresh repository list
+• \`/reindex [repo]\` - Reindex specific repository
+• \`/reindex\` - Reindex current project
+• \`/reindex-all\` - Reindex all repositories
+
+**General:**
+• \`/help\` - Show this help message
+
+**Workflow Example:**
+1. \`/list-files Trading-Bot\`
+2. \`/attach-file main.py\`
+3. \`/attach-file src/utils.py\`
+4. Ask your question - attached files will be included as context`;
+
+        setMessages([...messages, { role: "system", content: helpText }]);
       } else {
-        setMessages([...messages, { role: "system", content: `Unknown command: ${command}` }]);
+        setMessages([...messages, { role: "system", content: `Unknown command: ${command}. Type /help for available commands.` }]);
       }
     } catch (error) {
       setMessages([...messages, { role: "system", content: `Error executing command: ${error.message}` }]);
@@ -335,7 +395,25 @@ export default function App() {
       setInput("");
 
       try {
-        const assistantReply = await sendMessage(project, newMessages);
+        // Include attached files in the context
+        let enhancedMessages = [...newMessages];
+
+        if (attachedFiles.length > 0) {
+          const attachmentContext = attachedFiles.map(file =>
+            `**File: ${file.path}**\n\`\`\`\n${file.content}\n\`\`\``
+          ).join('\n\n---\n\n');
+
+          enhancedMessages = [
+            {
+              role: "system",
+              content: `The user has attached ${attachedFiles.length} file(s) for context. Please analyze these files in relation to their question:\n\n${attachmentContext}`,
+              timestamp: getTimestamp(),
+            },
+            ...newMessages
+          ];
+        }
+
+        const assistantReply = await sendMessage(project, enhancedMessages);
         const assistantMessage = {
           role: "assistant",
           content: assistantReply,
@@ -360,7 +438,7 @@ export default function App() {
       <div className="w-full max-w-2xl h-[90vh] flex flex-col border rounded-xl shadow bg-white overflow-hidden">
         {/* Header with Project Selector */}
         <header className="p-4 border-b text-center bg-gray-100 flex items-center justify-between">
-          <h1 className="text-lg font-semibold">💬 Chat Coding Assistant</h1>
+          <h1 className="text-lg font-semibold">💬 HtD Coding Assistant</h1>
           <div className="flex items-center gap-2">
             {loadingRepos ? (
               <div className="text-sm text-gray-500">Loading repositories...</div>
@@ -392,6 +470,19 @@ export default function App() {
             </button>
           </div>
         </header>
+
+        {/* Attachment indicator */}
+        {attachedFiles.length > 0 && (
+          <div className="px-4 py-2 bg-blue-50 border-b border-blue-200 text-sm text-blue-700">
+            📎 {attachedFiles.length} file(s) attached - Your next message will include them as context
+            <button
+              onClick={() => onCommand("/clear-attachments")}
+              className="ml-2 text-blue-600 hover:text-blue-800 underline"
+            >
+              Clear all
+            </button>
+          </div>
+        )}
 
         {/* Message List */}
         <main className="flex-1 overflow-y-auto p-4 space-y-4">
@@ -428,7 +519,7 @@ export default function App() {
             </button>
           </form>
           <div className="text-xs text-gray-500 mt-1">
-            Commands: /refresh-repos, /list-files [repo], /get-file [path], /reindex [repo], /reindex-all
+            Commands: /attach-file, /list-files, /reindex, /help
           </div>
         </footer>
       </div>

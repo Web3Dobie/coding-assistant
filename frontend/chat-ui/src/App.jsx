@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from "react";
 import Message from "./components/Message";
+import ArtifactViewer from "./components/ArtifactViewer";
 import { sendMessage } from "./api/chat";
 
 export default function App() {
@@ -9,10 +10,111 @@ export default function App() {
   const [input, setInput] = useState("");
   const [loadingRepos, setLoadingRepos] = useState(true);
   const [attachedFiles, setAttachedFiles] = useState([]);
+  const [currentArtifact, setCurrentArtifact] = useState(null);
+  const [artifactPanelWidth, setArtifactPanelWidth] = useState(50); // Percentage
 
   const textareaRef = useRef(null);
   const messagesEndRef = useRef(null);
+  const resizeRef = useRef(null);
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
+
+  // Artifact detection function
+  const detectArtifact = (content, messageIndex) => {
+    // Check for complete files
+    const fileHeaderRegex = /^(Here's a detailed .*?\.(\w+) file|Here's the .*?\.(\w+) file|Here's your .*?\.(\w+) file)/i;
+    const fileMatch = content.match(fileHeaderRegex);
+
+    if (fileMatch) {
+      const extension = fileMatch[2] || fileMatch[3] || fileMatch[4] || 'txt';
+      const filename = content.match(/([\w-]+\.\w+)/)?.[1] || `file.${extension}`;
+
+      // Extract code content
+      const codeBlockMatch = content.match(/```[\w]*\n([\s\S]*?)```/);
+      if (codeBlockMatch) {
+        return {
+          id: `artifact-${messageIndex}`,
+          type: 'file',
+          title: filename,
+          language: getLanguageFromExtension(extension),
+          content: codeBlockMatch[1].trim(),
+          messageIndex
+        };
+      }
+    }
+
+    // Check for substantial code blocks (>20 lines)
+    const codeBlocks = content.match(/```(\w+)?\n([\s\S]*?)```/g);
+    if (codeBlocks) {
+      for (let i = 0; i < codeBlocks.length; i++) {
+        const block = codeBlocks[i];
+        const match = block.match(/```(\w+)?\n([\s\S]*?)```/);
+        if (match && match[2].split('\n').length > 20) {
+          const language = match[1] || 'text';
+          return {
+            id: `artifact-${messageIndex}-${i}`,
+            type: 'code',
+            title: `${language} code`,
+            language: language,
+            content: match[2].trim(),
+            messageIndex
+          };
+        }
+      }
+    }
+
+    // Check for long content that would benefit from artifact view
+    if (content.length > 2000 && content.includes('```')) {
+      return {
+        id: `artifact-${messageIndex}`,
+        type: 'document',
+        title: 'Generated Content',
+        language: 'markdown',
+        content: content,
+        messageIndex
+      };
+    }
+
+    return null;
+  };
+
+  const getLanguageFromExtension = (ext) => {
+    const languageMap = {
+      'js': 'javascript',
+      'jsx': 'javascript',
+      'ts': 'typescript',
+      'tsx': 'typescript',
+      'py': 'python',
+      'css': 'css',
+      'scss': 'scss',
+      'html': 'html',
+      'md': 'markdown',
+      'json': 'json',
+      'yaml': 'yaml',
+      'yml': 'yaml',
+      'sh': 'bash',
+      'bash': 'bash'
+    };
+    return languageMap[ext.toLowerCase()] || ext;
+  };
+
+  // Handle mouse down for resizing
+  const handleMouseDown = (e) => {
+    e.preventDefault();
+    document.addEventListener('mousemove', handleMouseMove);
+    document.addEventListener('mouseup', handleMouseUp);
+  };
+
+  const handleMouseMove = (e) => {
+    const containerWidth = window.innerWidth;
+    const newWidth = ((containerWidth - e.clientX) / containerWidth) * 100;
+    const clampedWidth = Math.min(Math.max(newWidth, 30), 70); // 30% to 70%
+    setArtifactPanelWidth(clampedWidth);
+  };
+
+  const handleMouseUp = () => {
+    document.removeEventListener('mousemove', handleMouseMove);
+    document.removeEventListener('mouseup', handleMouseUp);
+  };
 
   // Load repositories on component mount
   useEffect(() => {
@@ -25,20 +127,17 @@ export default function App() {
           const data = await response.json();
           setRepositories(data.repositories);
 
-          // Set first repository as default if none selected
           if (data.repositories.length > 0 && !project) {
             setProject(data.repositories[0]);
           }
         } else {
           console.error("Failed to load repositories");
-          // Fallback to hardcoded list
           const fallbackRepos = ["X-Agent", "DutchBrat-Website", "Coding-Assistant", "Hedgefund-Agent"];
           setRepositories(fallbackRepos);
           setProject(fallbackRepos[0]);
         }
       } catch (error) {
         console.error("Error loading repositories:", error);
-        // Fallback to hardcoded list
         const fallbackRepos = ["X-Agent", "DutchBrat-Website", "Coding-Assistant", "Hedgefund-Agent"];
         setRepositories(fallbackRepos);
         setProject(fallbackRepos[0]);
@@ -64,7 +163,6 @@ export default function App() {
           return;
         }
 
-        // Check if path includes repo name (contains /)
         if (!filePath.includes('/')) {
           setMessages([...messages, { role: "system", content: `❌ File path must include repository name. Usage: /attach-file [repo]/[file_path]\nExample: /attach-file Trading-Bot/main.py` }]);
           return;
@@ -81,13 +179,11 @@ export default function App() {
         } else {
           const data = await response.json();
 
-          // Check if file is already attached
           if (attachedFiles.some(f => f.path === data.file_path)) {
             setMessages([...messages, { role: "system", content: `⚠️ File ${data.file_path} is already attached.` }]);
             return;
           }
 
-          // Add to attached files list
           const newAttachment = {
             path: data.file_path,
             content: data.content,
@@ -135,7 +231,6 @@ export default function App() {
           setMessages([...messages, { role: "system", content: `Files in ${repoName}:\n${fileList}` }]);
         }
       } else if (command === "/refresh-repos") {
-        // Command to refresh repository list
         setLoadingRepos(true);
         const response = await fetch(`${API_BASE_URL}/repositories`);
         if (response.ok) {
@@ -147,7 +242,6 @@ export default function App() {
         }
         setLoadingRepos(false);
       } else if (command === "/reindex-all") {
-        // Command to reindex all repositories - CHECK THIS FIRST before /reindex
         const initialMessages = [...messages, { role: "system", content: `🔄 Starting reindex for ALL repositories...` }];
         setMessages(initialMessages);
 
@@ -168,7 +262,6 @@ export default function App() {
 
               if (response.ok) {
                 const data = await response.json();
-                // Check if this is a background operation start vs completion
                 if (data.message && (data.message.includes('started') || data.message.includes('background'))) {
                   setMessages([...initialMessages,
                   { role: "system", content: `📂 Scanning all repositories...` },
@@ -200,17 +293,14 @@ export default function App() {
           }, 800);
         }, 500);
       } else if (command === "/reindex") {
-        // Command to reindex current project (no parameters)
         if (!project) {
           setMessages([...messages, { role: "system", content: `❌ No current project selected. Please select a project or use: /reindex [repo_name]` }]);
           return;
         }
 
-        // Use current project
         const currentMessages = [...messages, { role: "system", content: `🔄 No repository specified, using current project: ${project}` }];
         setMessages(currentMessages);
 
-        // Start reindexing current project
         setTimeout(async () => {
           setMessages([...currentMessages, { role: "system", content: `📂 Scanning repository: ${project}` }]);
 
@@ -221,19 +311,14 @@ export default function App() {
             ]);
 
             try {
-              console.log("🐛 DEBUG: Sending reindex request for current project:", project);
-              const requestBody = { repo_name: project };
-              console.log("🐛 DEBUG: Request body:", JSON.stringify(requestBody));
-
               const response = await fetch(`${API_BASE_URL}/reindex`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify(requestBody),
+                body: JSON.stringify({ repo_name: project }),
               });
 
               if (response.ok) {
                 const data = await response.json();
-                // Check if this is a background operation start vs completion
                 if (data.message && (data.message.includes('started') || data.message.includes('background'))) {
                   setMessages([...currentMessages,
                   { role: "system", content: `📂 Scanning repository: ${project}` },
@@ -265,8 +350,6 @@ export default function App() {
           }, 800);
         }, 500);
       } else if (command.startsWith("/reindex ")) {
-        // Command to reindex specific repository (with parameters)
-        // Extract everything after "/reindex " as the repository name
         const repoName = command.substring("/reindex ".length).trim();
 
         if (!repoName) {
@@ -274,7 +357,6 @@ export default function App() {
           return;
         }
 
-        // Reindex specified repository with verbose feedback
         const initialMessages = [...messages, { role: "system", content: `🔄 Starting reindex for repository: ${repoName}` }];
         setMessages(initialMessages);
 
@@ -288,8 +370,6 @@ export default function App() {
             ]);
 
             try {
-              console.log("🐛 DEBUG: Sending reindex request for:", repoName);
-
               const response = await fetch(`${API_BASE_URL}/reindex`, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
@@ -298,7 +378,6 @@ export default function App() {
 
               if (response.ok) {
                 const data = await response.json();
-                // Check if this is a background operation start vs completion
                 if (data.message && (data.message.includes('started') || data.message.includes('background'))) {
                   setMessages([...initialMessages,
                   { role: "system", content: `📂 Scanning repository: ${repoName}` },
@@ -367,7 +446,7 @@ export default function App() {
     setInput("");
   };
 
-  // Auto-resize textarea up to 10 lines (240px assuming 24px line height)
+  // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = "auto";
@@ -384,6 +463,19 @@ export default function App() {
   // Auto-scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages]);
+
+  // Detect artifacts when messages change
+  useEffect(() => {
+    if (messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.role === 'assistant') {
+        const artifact = detectArtifact(lastMessage.content, messages.length - 1);
+        if (artifact) {
+          setCurrentArtifact(artifact);
+        }
+      }
+    }
   }, [messages]);
 
   const handleSubmit = async (e) => {
@@ -403,7 +495,6 @@ export default function App() {
       setInput("");
 
       try {
-        // Include attached files in the context
         let enhancedMessages = [...newMessages];
 
         if (attachedFiles.length > 0) {
@@ -442,9 +533,9 @@ export default function App() {
   };
 
   return (
-    <div className="h-screen w-screen bg-gray-100 flex">
-      {/* Sidebar for attachments and controls */}
-      <div className="w-80 bg-white border-r border-gray-200 flex flex-col">
+    <div className="h-screen bg-white flex">
+      {/* Sidebar */}
+      <div className="w-80 bg-gray-50 border-r border-gray-200 flex flex-col">
         {/* Header */}
         <header className="p-4 border-b border-gray-200">
           <h1 className="text-lg font-semibold text-gray-900 mb-3">💬 Coding Assistant</h1>
@@ -502,7 +593,7 @@ export default function App() {
             ) : (
               <div className="space-y-2">
                 {attachedFiles.map((file, idx) => (
-                  <div key={idx} className="group flex items-center gap-2 p-2 bg-gray-50 rounded-md border border-gray-200 hover:bg-gray-100">
+                  <div key={idx} className="group flex items-center gap-2 p-2 bg-white rounded-md border border-gray-200 hover:bg-gray-50">
                     <div className="flex-1 min-w-0">
                       <div className="text-xs font-medium text-gray-900 truncate" title={file.path}>
                         {file.path.split('/').pop()}
@@ -533,27 +624,27 @@ export default function App() {
           <div className="grid grid-cols-2 gap-2 text-xs">
             <button
               onClick={() => setInput('/help')}
-              className="p-2 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 transition-colors"
+              className="p-2 bg-white hover:bg-gray-50 rounded text-gray-700 transition-colors border border-gray-200"
             >
               📖 Help
             </button>
             <button
               onClick={() => setInput('/list-files ' + project)}
-              className="p-2 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 transition-colors"
+              className="p-2 bg-white hover:bg-gray-50 rounded text-gray-700 transition-colors border border-gray-200"
               disabled={!project}
             >
               📁 List Files
             </button>
             <button
               onClick={() => setInput('/reindex ' + project)}
-              className="p-2 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 transition-colors"
+              className="p-2 bg-white hover:bg-gray-50 rounded text-gray-700 transition-colors border border-gray-200"
               disabled={!project}
             >
               🔄 Reindex
             </button>
             <button
               onClick={() => setInput('/reindex-all')}
-              className="p-2 bg-gray-100 hover:bg-gray-200 rounded text-gray-700 transition-colors"
+              className="p-2 bg-white hover:bg-gray-50 rounded text-gray-700 transition-colors border border-gray-200"
             >
               🔄 Reindex All
             </button>
@@ -561,76 +652,106 @@ export default function App() {
         </div>
       </div>
 
-      {/* Main chat area */}
-      <div className="flex-1 flex flex-col bg-white">
-        {/* Chat messages */}
-        <main className="flex-1 overflow-y-auto p-6">
-          <div className="max-w-4xl mx-auto space-y-6">
-            {messages.length === 0 ? (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-orange-400 to-pink-400 flex items-center justify-center text-white text-2xl font-semibold">
-                  AI
+      {/* Main content area */}
+      <div className="flex-1 flex">
+        {/* Conversation panel */}
+        <div
+          className={`flex flex-col bg-white ${currentArtifact ? '' : 'flex-1'}`}
+          style={{
+            width: currentArtifact ? `${100 - artifactPanelWidth}%` : '100%'
+          }}
+        >
+          {/* Chat messages */}
+          <main className="flex-1 overflow-y-auto p-6">
+            <div className="max-w-4xl mx-auto space-y-6">
+              {messages.length === 0 ? (
+                <div className="text-center py-12">
+                  <div className="w-16 h-16 mx-auto mb-4 rounded-full bg-gradient-to-br from-orange-400 to-pink-400 flex items-center justify-center text-white text-2xl font-semibold">
+                    AI
+                  </div>
+                  <h2 className="text-xl font-semibold text-gray-900 mb-2">
+                    Welcome to your Coding Assistant
+                  </h2>
+                  <p className="text-gray-600 mb-4">
+                    Ask questions about your code, attach files for analysis, or use commands to manage your repositories.
+                  </p>
+                  <div className="text-sm text-gray-500">
+                    Try typing <code className="bg-gray-100 px-1 rounded">/help</code> to see available commands
+                  </div>
                 </div>
-                <h2 className="text-xl font-semibold text-gray-900 mb-2">
-                  Welcome to your Coding Assistant
-                </h2>
-                <p className="text-gray-600 mb-4">
-                  Ask questions about your code, attach files for analysis, or use commands to manage your repositories.
-                </p>
-                <div className="text-sm text-gray-500">
-                  Try typing <code className="bg-gray-100 px-1 rounded">/help</code> to see available commands
-                </div>
-              </div>
-            ) : (
-              messages.map((msg, idx) => (
-                <Message
-                  key={idx}
-                  role={msg.role}
-                  content={msg.content}
-                  timestamp={msg.timestamp}
-                />
-              ))
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-        </main>
-
-        {/* Input area */}
-        <footer className="border-t border-gray-200 p-4">
-          <div className="max-w-4xl mx-auto">
-            {attachedFiles.length > 0 && (
-              <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-md">
-                <div className="text-xs text-blue-700">
-                  📎 {attachedFiles.length} file(s) will be included with your message
-                </div>
-              </div>
-            )}
-            <form onSubmit={handleSubmit} className="flex gap-3">
-              <textarea
-                ref={textareaRef}
-                rows={1}
-                className="flex-1 px-4 py-3 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                placeholder={`Ask a question about ${project || 'your code'}...`}
-                value={input}
-                onChange={(e) => setInput(e.target.value)}
-                style={{ lineHeight: "24px" }}
-                disabled={!project}
-              />
-              <button
-                type="submit"
-                className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-                disabled={!project || !input.trim()}
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-                </svg>
-              </button>
-            </form>
-            <div className="text-xs text-gray-500 mt-2 text-center">
-              Use <code className="bg-gray-100 px-1 rounded">/attach-file [repo]/[file]</code> to attach files, or <code className="bg-gray-100 px-1 rounded">/help</code> for all commands
+              ) : (
+                messages.map((msg, idx) => (
+                  <Message
+                    key={idx}
+                    role={msg.role}
+                    content={msg.content}
+                    timestamp={msg.timestamp}
+                    onArtifactCreate={(artifact) => setCurrentArtifact({ ...artifact, messageIndex: idx })}
+                  />
+                ))
+              )}
+              <div ref={messagesEndRef} />
             </div>
+          </main>
+
+          {/* Input area */}
+          <footer className="border-t border-gray-200 p-4">
+            <div className="max-w-4xl mx-auto">
+              {attachedFiles.length > 0 && (
+                <div className="mb-3 p-2 bg-blue-50 border border-blue-200 rounded-md">
+                  <div className="text-xs text-blue-700">
+                    📎 {attachedFiles.length} file(s) will be included with your message
+                  </div>
+                </div>
+              )}
+              <form onSubmit={handleSubmit} className="flex gap-3">
+                <textarea
+                  ref={textareaRef}
+                  rows={1}
+                  className="flex-1 px-4 py-3 border border-gray-300 rounded-lg resize-none focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  placeholder={`Ask a question about ${project || 'your code'}...`}
+                  value={input}
+                  onChange={(e) => setInput(e.target.value)}
+                  style={{ lineHeight: "24px" }}
+                  disabled={!project}
+                />
+                <button
+                  type="submit"
+                  className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
+                  disabled={!project || !input.trim()}
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                  </svg>
+                </button>
+              </form>
+              <div className="text-xs text-gray-500 mt-2 text-center">
+                Use <code className="bg-gray-100 px-1 rounded">/attach-file [repo]/[file]</code> to attach files, or <code className="bg-gray-100 px-1 rounded">/help</code> for all commands
+              </div>
+            </div>
+          </footer>
+        </div>
+
+        {/* Resize handle */}
+        {currentArtifact && (
+          <div
+            className="w-1 bg-gray-200 hover:bg-gray-300 cursor-col-resize flex-shrink-0"
+            onMouseDown={handleMouseDown}
+          />
+        )}
+
+        {/* Artifact panel */}
+        {currentArtifact && (
+          <div
+            className="bg-gray-50 border-l border-gray-200 flex flex-col"
+            style={{ width: `${artifactPanelWidth}%` }}
+          >
+            <ArtifactViewer
+              artifact={currentArtifact}
+              onClose={() => setCurrentArtifact(null)}
+            />
           </div>
-        </footer>
+        )}
       </div>
     </div>
   );

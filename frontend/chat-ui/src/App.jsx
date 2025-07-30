@@ -481,14 +481,34 @@ export default function App() {
 
         {/* Attachment indicator */}
         {attachedFiles.length > 0 && (
-          <div className="px-4 py-2 bg-blue-50 border-b border-blue-200 text-sm text-blue-700">
-            📎 {attachedFiles.length} file(s) attached - Your next message will include them as context
-            <button
-              onClick={() => onCommand("/clear-attachments")}
-              className="ml-2 text-blue-600 hover:text-blue-800 underline"
-            >
-              Clear all
-            </button>
+          <div className="px-4 py-2 bg-blue-50 border-b border-blue-200 text-sm">
+            <div className="flex items-center justify-between">
+              <span className="text-blue-700">
+                📎 {attachedFiles.length} file(s) attached - Your next message will include them as context
+              </span>
+              <button
+                onClick={() => onCommand("/clear-attachments")}
+                className="text-blue-600 hover:text-blue-800 underline text-xs"
+              >
+                Clear all
+              </button>
+            </div>
+            <div className="mt-2 space-y-1">
+              {attachedFiles.map((file, idx) => (
+                <div key={idx} className="flex items-center justify-between bg-white rounded px-2 py-1 border border-blue-200">
+                  <span className="text-xs text-gray-700 truncate flex-1" title={file.path}>
+                    {file.path}
+                  </span>
+                  <button
+                    onClick={() => onCommand(`/remove-attachment ${idx + 1}`)}
+                    className="ml-2 text-red-600 hover:text-red-800 text-xs"
+                    title="Remove this file"
+                  >
+                    ✕
+                  </button>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 

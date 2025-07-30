@@ -70,10 +70,12 @@ export default function App() {
           return;
         }
 
-        const response = await fetch(`${API_BASE_URL}/get-file`, {
+        const formData = new FormData();
+        formData.append('file_path', filePath);
+
+        const response = await fetch(`${API_BASE_URL}/get-file`, {  // Keep the backend endpoint name
           method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ file_path: filePath }),
+          body: formData,
         });
 
         if (!response.ok) {

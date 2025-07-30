@@ -74,14 +74,22 @@ const highlightCode = (code, language) => {
 
 // Check if content should create an artifact
 const shouldCreateArtifact = (content) => {
-    // Check for complete files
-    const fileHeaderRegex = /^(Here's a detailed .*?\.(\w+) file|Here's the .*?\.(\w+) file|Here's your .*?\.(\w+) file)/i;
-    const fileMatch = content.match(fileHeaderRegex);
+    // Check for complete files with more flexible patterns
+    const fileHeaderPatterns = [
+        /Below is a draft.*?for the ([\w-]+\.[\w]+)/i,
+        /Here's a detailed.*?([\w-]+\.[\w]+)/i,
+        /Here's the.*?([\w-]+\.[\w]+)/i,
+        /Here's your.*?([\w-]+\.[\w]+)/i,
+        /draft.*?for the ([\w-]+\.[\w]+)/i
+    ];
 
-    if (fileMatch) {
-        const codeBlockMatch = content.match(/```[\w]*\n([\s\S]*?)```/);
-        if (codeBlockMatch) {
-            return true;
+    for (const pattern of fileHeaderPatterns) {
+        const fileMatch = content.match(pattern);
+        if (fileMatch) {
+            const codeBlockMatch = content.match(/```[\w]*\n([\s\S]*?)```/);
+            if (codeBlockMatch || content.length > 500) {
+                return true;
+            }
         }
     }
 
@@ -98,7 +106,7 @@ const shouldCreateArtifact = (content) => {
     }
 
     // Check for long content that would benefit from artifact view
-    if (content.length > 2000 && content.includes('```')) {
+    if (content.length > 1500 && (content.includes('```') || content.includes('#'))) {
         return true;
     }
 
@@ -245,27 +253,43 @@ export default function Message({ role, content, timestamp, onArtifactCreate }) 
     // Create artifact when needed
     useEffect(() => {
         if (role === 'assistant' && onArtifactCreate && hasArtifact) {
-            // Check for complete files
-            const fileHeaderRegex = /^(Here's a detailed .*?\.(\w+) file|Here's the .*?\.(\w+) file|Here's your .*?\.(\w+) file)/i;
-            const fileMatch = content.match(fileHeaderRegex);
+            // Check for file references with flexible patterns
+            const filePatterns = [
+                /Below is a draft.*?for the ([\w-]+\.[\w]+)/i,
+                /Here's a detailed.*?([\w-]+\.[\w]+)/i,
+                /Here's the.*?([\w-]+\.[\w]+)/i,
+                /Here's your.*?([\w-]+\.[\w]+)/i,
+                /draft.*?for the ([\w-]+\.[\w]+)/i
+            ];
 
-            if (fileMatch) {
-                const extension = fileMatch[2] || fileMatch[3] || fileMatch[4] || 'txt';
-                const filename = content.match(/([\w-]+\.\w+)/)?.[1] || `file.${extension}`;
+            let fileMatch = null;
+            let filename = null;
 
-                const codeBlockMatch = content.match(/```[\w]*\n([\s\S]*?)```/);
-                if (codeBlockMatch) {
-                    const artifact = {
-                        id: `artifact-${Date.now()}`,
-                        type: 'file',
-                        title: filename,
-                        language: getLanguageFromExtension(extension),
-                        content: codeBlockMatch[1].trim()
-                    };
-                    setCreatedArtifact(artifact);
-                    onArtifactCreate(artifact);
-                    return;
+            for (const pattern of filePatterns) {
+                fileMatch = content.match(pattern);
+                if (fileMatch) {
+                    filename = fileMatch[1];
+                    break;
                 }
+            }
+
+            if (fileMatch && filename) {
+                const extension = filename.split('.').pop() || 'txt';
+
+                // For README or long content, create artifact even without code blocks
+                const codeBlockMatch = content.match(/```[\w]*\n([\s\S]*?)```/);
+                const artifactContent = codeBlockMatch ? codeBlockMatch[1].trim() : content;
+
+                const artifact = {
+                    id: `artifact-${Date.now()}`,
+                    type: 'file',
+                    title: filename,
+                    language: getLanguageFromExtension(extension),
+                    content: artifactContent
+                };
+                setCreatedArtifact(artifact);
+                onArtifactCreate(artifact);
+                return;
             }
 
             // Check for substantial code blocks (>20 lines)
@@ -290,8 +314,8 @@ export default function Message({ role, content, timestamp, onArtifactCreate }) 
                 }
             }
 
-            // Long content
-            if (content.length > 2000 && content.includes('```')) {
+            // Long content without code blocks
+            if (content.length > 1500) {
                 const artifact = {
                     id: `artifact-${Date.now()}`,
                     type: 'document',

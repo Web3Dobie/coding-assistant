@@ -235,9 +235,16 @@ export default function App() {
         } else {
           const data = await response.json();
           if (data.format === "tree" && data.tree) {
+            // Debug: log the raw tree to see what we're getting
+            console.log("Raw tree data:", JSON.stringify(data.tree));
+
+            // Ensure proper line breaks are preserved
+            const formattedTree = `📁 File structure for ${targetRepo}:\n\n${data.tree}`;
+            console.log("Formatted tree:", JSON.stringify(formattedTree));
+
             setMessages([...messages, {
               role: "system",
-              content: `📁 File structure for ${targetRepo}:\n\n${data.tree}`
+              content: formattedTree
             }]);
           } else if (data.files) {
             // Fallback to list format

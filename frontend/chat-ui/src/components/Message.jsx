@@ -382,8 +382,10 @@ export default function Message({ role, content, timestamp, onArtifactCreate }) 
     if (role === 'system') {
         return (
             <div className="mb-4">
-                <div className="flex items-center gap-2 text-sm text-blue-700 bg-blue-50 px-4 py-3 rounded-md border-l-4 border-blue-400">
-                    <span>{content}</span>
+                <div className="text-sm text-blue-700 bg-blue-50 px-4 py-3 rounded-md border-l-4 border-blue-400">
+                    <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-gray-800">
+                        {content}
+                    </pre>
                 </div>
             </div>
         );

@@ -237,7 +237,7 @@ export default function App() {
           if (data.format === "tree" && data.tree) {
             setMessages([...messages, {
               role: "system",
-              content: `📁 **File structure for ${targetRepo}:**\n\n\`\`\`\n${data.tree}\n\`\`\``
+              content: `📁 File structure for ${targetRepo}:\n\n${data.tree}`
             }]);
           } else if (data.files) {
             // Fallback to list format
@@ -551,18 +551,18 @@ export default function App() {
     <div className="h-screen bg-white flex flex-col">
       {/* Top Header Bar */}
       <div className="bg-gray-50 border-b border-gray-200 p-4">
-        <div className="flex items-center justify-between gap-4">
-          {/* Left side - Title and Repository Selection */}
-          <div className="flex items-center gap-4">
-            <h1 className="text-lg font-semibold text-gray-900">💬 Coding Assistant</h1>
-            <div className="flex items-center gap-2">
+        <div className="space-y-4">
+          {/* Top Row - Title and Repository Selection */}
+          <div className="flex items-center gap-6">
+            <h1 className="text-xl font-semibold text-gray-900">💬 Coding Assistant</h1>
+            <div className="flex items-center gap-3">
               {loadingRepos ? (
-                <div className="text-sm text-gray-500">Loading repositories...</div>
+                <div className="text-base text-gray-500">Loading repositories...</div>
               ) : (
                 <select
                   value={project}
                   onChange={(e) => setProject(e.target.value)}
-                  className="border border-gray-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  className="border border-gray-300 rounded-md px-4 py-2.5 text-base font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-48"
                   disabled={repositories.length === 0}
                 >
                   {repositories.length === 0 ? (
@@ -578,7 +578,7 @@ export default function App() {
               )}
               <button
                 onClick={() => onCommand("/refresh-repos")}
-                className="text-sm bg-gray-100 hover:bg-gray-200 px-3 py-2 rounded-md text-gray-700 transition-colors"
+                className="bg-gray-100 hover:bg-gray-200 px-4 py-2.5 rounded-md text-gray-700 transition-colors font-medium"
                 disabled={loadingRepos}
               >
                 🔄 Refresh
@@ -586,72 +586,72 @@ export default function App() {
             </div>
           </div>
 
-          {/* Right side - Attached Files and Quick Commands */}
-          <div className="flex items-center gap-4">
-            {/* Attached Files Counter */}
-            {attachedFiles.length > 0 && (
-              <div className="flex items-center gap-2 text-sm text-gray-600">
-                <span>📎 {attachedFiles.length} file(s) attached</span>
-                <button
-                  onClick={() => onCommand("/clear-attachments")}
-                  className="text-xs text-red-600 hover:text-red-800"
-                >
-                  Clear
-                </button>
-              </div>
-            )}
-
+          {/* Bottom Row - Quick Commands and Attached Files */}
+          <div className="flex items-center justify-between">
             {/* Quick Command Buttons */}
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <button
                 onClick={() => setInput('/help')}
-                className="px-3 py-1.5 bg-white hover:bg-gray-50 rounded text-gray-700 transition-colors border border-gray-200 text-sm"
+                className="px-4 py-2 bg-white hover:bg-gray-50 rounded text-gray-700 transition-colors border border-gray-200 font-medium"
               >
                 📖 Help
               </button>
               <button
                 onClick={() => setInput('/list-files ' + project)}
-                className="px-3 py-1.5 bg-white hover:bg-gray-50 rounded text-gray-700 transition-colors border border-gray-200 text-sm"
+                className="px-4 py-2 bg-white hover:bg-gray-50 rounded text-gray-700 transition-colors border border-gray-200 font-medium"
                 disabled={!project}
               >
                 📁 List Files
               </button>
               <button
                 onClick={() => setInput('/reindex-all')}
-                className="px-3 py-1.5 bg-white hover:bg-gray-50 rounded text-gray-700 transition-colors border border-gray-200 text-sm"
+                className="px-4 py-2 bg-white hover:bg-gray-50 rounded text-gray-700 transition-colors border border-gray-200 font-medium"
               >
                 🔄 Reindex All
               </button>
             </div>
-          </div>
-        </div>
 
-        {/* Attached Files List (if any) */}
-        {attachedFiles.length > 0 && (
-          <div className="mt-3 pt-3 border-t border-gray-200">
-            <div className="flex flex-wrap gap-2">
-              {attachedFiles.map((file, idx) => (
-                <div key={idx} className="group flex items-center gap-2 px-3 py-1 bg-white rounded-md border border-gray-200 hover:bg-gray-50">
-                  <div className="text-xs text-gray-900 font-medium">
-                    {file.path.split('/').pop()}
-                  </div>
-                  <div className="text-xs text-gray-500">
-                    {file.path.split('/').slice(0, -1).join('/')}
-                  </div>
-                  <button
-                    onClick={() => onCommand(`/remove-attachment ${idx + 1}`)}
-                    className="text-red-500 hover:text-red-700 transition-colors"
-                    title="Remove this file"
-                  >
-                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </button>
-                </div>
-              ))}
-            </div>
+            {/* Attached Files Counter */}
+            {attachedFiles.length > 0 && (
+              <div className="flex items-center gap-3 text-gray-600">
+                <span className="font-medium">📎 {attachedFiles.length} file(s) attached</span>
+                <button
+                  onClick={() => onCommand("/clear-attachments")}
+                  className="text-red-600 hover:text-red-800 font-medium"
+                >
+                  Clear All
+                </button>
+              </div>
+            )}
           </div>
-        )}
+
+          {/* Attached Files List (if any) */}
+          {attachedFiles.length > 0 && (
+            <div className="pt-2 border-t border-gray-200">
+              <div className="flex flex-wrap gap-2">
+                {attachedFiles.map((file, idx) => (
+                  <div key={idx} className="group flex items-center gap-2 px-3 py-1.5 bg-white rounded-md border border-gray-200 hover:bg-gray-50">
+                    <div className="text-sm text-gray-900 font-medium">
+                      {file.path.split('/').pop()}
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      {file.path.split('/').slice(0, -1).join('/')}
+                    </div>
+                    <button
+                      onClick={() => onCommand(`/remove-attachment ${idx + 1}`)}
+                      className="text-red-500 hover:text-red-700 transition-colors"
+                      title="Remove this file"
+                    >
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Main content area */}

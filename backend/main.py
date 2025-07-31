@@ -115,8 +115,7 @@ def build_tree_structure(repo_path: str, max_depth: int = 4, ignore_dirs: set = 
             if path.is_file():
                 return {
                     "type": "file",
-                    "name": path.name,
-                    "size": path.stat().st_size
+                    "name": path.name
                 }
             elif path.is_dir():
                 children = []
@@ -133,8 +132,8 @@ def build_tree_structure(repo_path: str, max_depth: int = 4, ignore_dirs: set = 
                             children.append(child)
                         
                         # Limit children to prevent huge trees
-                        if len(children) >= 50:
-                            children.append({"type": "truncated", "name": f"... ({len(list(path.iterdir())) - len(children)} more items)"})
+                        if len(children) >= 30:
+                            children.append({"type": "truncated", "name": f"... ({len(list(path.iterdir())) - len(children)} more)"})
                             break
                 
                 except PermissionError:
@@ -155,32 +154,32 @@ def build_tree_structure(repo_path: str, max_depth: int = 4, ignore_dirs: set = 
     tree = build_node(repo_path_obj)
     return tree or {"error": "Unable to read repository"}
 
-def tree_to_string(tree: dict, prefix: str = "", is_last: bool = True, max_lines: int = 200) -> str:
-    """Convert tree structure to string representation"""
+def tree_to_string(tree: dict, prefix: str = "", is_last: bool = True, max_lines: int = 100) -> str:
+    """Convert tree structure to clean string representation"""
     lines = []
     
     def add_node(node: dict, prefix: str, is_last: bool, current_lines: list) -> None:
         if len(current_lines) >= max_lines:
-            current_lines.append(f"{prefix}... (truncated, showing first {max_lines} items)")
+            current_lines.append(f"{prefix}...")
             return
         
         if node.get("error"):
-            current_lines.append(f"{prefix}❌ {node.get('name', 'Unknown')} - {node['error']}")
+            current_lines.append(f"{prefix}❌ {node.get('name', 'Unknown')}")
             return
         
         if node.get("truncated"):
-            current_lines.append(f"{prefix}📁 {node['name']} (too deep)")
+            current_lines.append(f"{prefix}📁 {node['name']}")
             return
         
         if node.get("type") == "truncated":
             current_lines.append(f"{prefix}{node['name']}")
             return
         
-        # Choose appropriate symbol
+        # Choose appropriate connector
+        connector = "└── " if is_last else "├── "
+        
         if node["type"] == "directory":
-            symbol = "📁" if node.get("children") else "📂"
-            connector = "└── " if is_last else "├── "
-            current_lines.append(f"{prefix}{connector}{symbol} {node['name']}/")
+            current_lines.append(f"{prefix}{connector}📁 {node['name']}/")
             
             # Add children
             children = node.get("children", [])
@@ -190,16 +189,7 @@ def tree_to_string(tree: dict, prefix: str = "", is_last: bool = True, max_lines
                 add_node(child, child_prefix, child_is_last, current_lines)
         
         else:  # file
-            connector = "└── " if is_last else "├── "
-            size_info = ""
-            if "size" in node:
-                size = node["size"]
-                if size > 1024 * 1024:
-                    size_info = f" ({size // (1024 * 1024)}MB)"
-                elif size > 1024:
-                    size_info = f" ({size // 1024}KB)"
-            
-            current_lines.append(f"{prefix}{connector}📄 {node['name']}{size_info}")
+            current_lines.append(f"{prefix}{connector}📄 {node['name']}")
     
     if tree.get("error"):
         return f"❌ Error: {tree['error']}"

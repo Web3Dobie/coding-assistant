@@ -382,8 +382,7 @@ export default function Message({ role, content, timestamp, onArtifactCreate }) 
     if (role === 'system') {
         return (
             <div className="mb-4">
-                <div className="flex items-center gap-2 text-sm text-amber-700 bg-amber-50 px-3 py-2 rounded-md">
-                    <span>⚠️</span>
+                <div className="flex items-center gap-2 text-sm text-blue-700 bg-blue-50 px-4 py-3 rounded-md border-l-4 border-blue-400">
                     <span>{content}</span>
                 </div>
             </div>

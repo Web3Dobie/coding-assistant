@@ -565,7 +565,7 @@ export default function App() {
               <select
                 value={project}
                 onChange={(e) => setProject(e.target.value)}
-                className="border border-gray-300 rounded-lg px-4 py-3 text-lg font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-60 bg-white"
+                className="border border-gray-300 rounded-lg px-6 py-4 text-xl font-medium focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent min-w-80 bg-white"
                 disabled={repositories.length === 0}
               >
                 {repositories.length === 0 ? (

@@ -119,23 +119,62 @@ const shouldCreateArtifact = (content) => {
 // Process message content and completely remove artifact code blocks
 const processMessageContent = (content, hasArtifact = false) => {
     if (hasArtifact) {
-        // Remove ALL code blocks from artifact messages - don't show them in conversation
+        // For README and other file artifacts, show only a brief intro
+        const filePatterns = [
+            /Here's a draft for the ([\w-]+\.[\w]+)/i,
+            /Below is a draft.*?for the ([\w-]+\.[\w]+)/i,
+            /Here's a detailed.*?([\w-]+\.[\w]+)/i,
+            /Here's the.*?([\w-]+\.[\w]+)/i,
+            /Here's your.*?([\w-]+\.[\w]+)/i,
+            /draft.*?for the ([\w-]+\.[\w]+)/i,
+            /README\.md.*?file/i,
+            /for the.*?([\w-]+\.[\w]+).*?project/i,
+            /draft.*?README\.md/i
+        ];
+
+        // Check if this is a file artifact
+        let isFileArtifact = false;
+        for (const pattern of filePatterns) {
+            if (content.match(pattern)) {
+                isFileArtifact = true;
+                break;
+            }
+        }
+
+        if (isFileArtifact) {
+            // Extract just the intro text (first paragraph or sentence)
+            const introMatch = content.match(/^(.*?(?:\n\n|$))/);
+            const introText = introMatch ? introMatch[1].trim() : "Generated content";
+
+            return [{
+                type: 'text',
+                content: introText
+            }, {
+                type: 'artifact_reference',
+                content: ''
+            }];
+        }
+
+        // For other artifacts, remove code blocks
         let processedContent = content;
-
-        // Remove code blocks completely
         processedContent = processedContent.replace(/```[\w]*\n[\s\S]*?```/g, '');
-
-        // Clean up extra newlines
         processedContent = processedContent.replace(/\n{3,}/g, '\n\n');
         processedContent = processedContent.trim();
 
-        return [{
-            type: 'text',
-            content: processedContent
-        }, {
-            type: 'artifact_reference',
-            content: ''  // Just show the card, no text
-        }];
+        if (processedContent) {
+            return [{
+                type: 'text',
+                content: processedContent
+            }, {
+                type: 'artifact_reference',
+                content: ''
+            }];
+        } else {
+            return [{
+                type: 'artifact_reference',
+                content: ''
+            }];
+        }
     }
 
     // For non-artifact messages, process normally but only show small code blocks
@@ -283,13 +322,39 @@ export default function Message({ role, content, timestamp, onArtifactCreate }) 
             if (fileMatch && filename) {
                 const extension = filename.split('.').pop() || 'txt';
 
-                // For README files, use the FULL content, not just code blocks
+                // For README files, extract the actual file content
+                let artifactContent = content;
+
+                // Try to extract content between --- markers or after ":" 
+                const contentAfterColon = content.match(/.*?:\s*\n\n([\s\S]*?)(?:\n\nLet me know|$)/);
+                if (contentAfterColon) {
+                    artifactContent = contentAfterColon[1].trim();
+                } else {
+                    // Try to extract content after the intro paragraph
+                    const contentAfterIntro = content.match(/.*?(?:context|structure):\s*\n\n([\s\S]*?)(?:\n\nLet me know|$)/);
+                    if (contentAfterIntro) {
+                        artifactContent = contentAfterIntro[1].trim();
+                    } else {
+                        // Try to extract content between --- markers
+                        const contentBetweenDashes = content.match(/---\s*\n\n([\s\S]*?)(?:\n\nLet me know|$)/);
+                        if (contentBetweenDashes) {
+                            artifactContent = contentBetweenDashes[1].trim();
+                        } else {
+                            // Fallback: look for markdown content starting with #
+                            const markdownMatch = content.match(/(^|\n)(# .+[\s\S]*?)(?:\n\nLet me know|$)/);
+                            if (markdownMatch) {
+                                artifactContent = markdownMatch[2].trim();
+                            }
+                        }
+                    }
+                }
+
                 const artifact = {
                     id: `artifact-${Date.now()}`,
                     type: 'file',
                     title: filename,
                     language: getLanguageFromExtension(extension),
-                    content: content  // Use full content instead of extracting code blocks
+                    content: artifactContent
                 };
                 setCreatedArtifact(artifact);
                 onArtifactCreate(artifact);

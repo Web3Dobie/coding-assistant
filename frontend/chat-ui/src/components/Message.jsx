@@ -96,21 +96,16 @@ const shouldCreateArtifact = (content) => {
         }
     }
 
-    // Check for substantial code blocks (>15 lines) - lowered threshold
+    // Check for large code blocks only (>8 lines)
     const codeBlocks = content.match(/```(\w+)?\n([\s\S]*?)```/g);
     if (codeBlocks) {
         for (let i = 0; i < codeBlocks.length; i++) {
             const block = codeBlocks[i];
             const match = block.match(/```(\w+)?\n([\s\S]*?)```/);
-            if (match && match[2].split('\n').length > 15) {
+            if (match && match[2].split('\n').length > 8) {
                 return true;
             }
         }
-    }
-
-    // Check for multiple code blocks
-    if (codeBlocks && codeBlocks.length > 1) {
-        return true;
     }
 
     return false;
@@ -327,8 +322,12 @@ const formatText = (text) => {
         .replace(/`#[a-fA-F0-9]{6};">`/g, '`') // Fix broken inline code markers
         .replace(/#[a-fA-F0-9]{6};">/g, '') // Remove any remaining color codes
         .replace(/;\s*color:\s*#[a-fA-F0-9]{6};\s*font-weight:\s*bold;?/g, '') // Remove CSS properties
+        .replace(/color:\s*#[a-fA-F0-9]{6};\s*font-weight:\s*bold;?\s*">/g, '') // Remove more CSS
+        .replace(/color:\s*#[a-fA-F0-9]{6};\s*">/g, '') // Remove color CSS
+        .replace(/font-weight:\s*bold;\s*">/g, '') // Remove font-weight CSS
         .replace(/"/g, '"') // Fix smart quotes
-        .replace(/"/g, '"'); // Fix smart quotes
+        .replace(/"/g, '"') // Fix smart quotes
+        .replace(/\*\[Large.*?block moved to artifact panel\]\*/g, ''); // Remove placeholder text
 
     return cleanText
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
@@ -421,9 +420,8 @@ export default function Message({ role, content, timestamp, onArtifactCreate, on
             // Check for substantial code blocks or multiple blocks
             const codeBlocks = content.match(/```(\w+)?\n([\s\S]*?)```/g);
             if (codeBlocks) {
-                // Check if we have multiple blocks or one large block
-                let hasLargeBlock = false;
-                let allCodeContent = [];
+                // Only include LARGE blocks (>8 lines) in artifacts
+                let largeBlocks = [];
 
                 for (let i = 0; i < codeBlocks.length; i++) {
                     const block = codeBlocks[i];
@@ -432,9 +430,9 @@ export default function Message({ role, content, timestamp, onArtifactCreate, on
                         const lineCount = match[2].split('\n').length;
                         const language = match[1] || 'text';
 
-                        if (lineCount > 15 || codeBlocks.length > 1) {
-                            hasLargeBlock = true;
-                            allCodeContent.push({
+                        // Only include blocks with >8 lines in artifact
+                        if (lineCount > 8) {
+                            largeBlocks.push({
                                 language: language,
                                 content: match[2].trim(),
                                 lines: lineCount
@@ -443,26 +441,26 @@ export default function Message({ role, content, timestamp, onArtifactCreate, on
                     }
                 }
 
-                if (hasLargeBlock && allCodeContent.length > 0) {
-                    // Create artifact with all code blocks
+                if (largeBlocks.length > 0) {
+                    // Create artifact with only large code blocks
                     let combinedContent;
                     let title;
                     let language;
 
-                    if (allCodeContent.length === 1) {
+                    if (largeBlocks.length === 1) {
                         // Single large block
-                        combinedContent = allCodeContent[0].content;
-                        title = `${allCodeContent[0].language} code`;
-                        language = allCodeContent[0].language;
+                        combinedContent = largeBlocks[0].content;
+                        title = `${largeBlocks[0].language} code (${largeBlocks[0].lines} lines)`;
+                        language = largeBlocks[0].language;
                     } else {
-                        // Multiple blocks - combine them with separators
-                        combinedContent = allCodeContent.map((block, idx) => {
+                        // Multiple large blocks - combine them with separators
+                        combinedContent = largeBlocks.map((block, idx) => {
                             const separator = idx === 0 ? '' : `\n\n# ===== ${block.language.toUpperCase()} BLOCK ${idx + 1} =====\n\n`;
                             return separator + block.content;
                         }).join('');
 
-                        title = `Multiple code blocks (${allCodeContent.length} blocks)`;
-                        language = allCodeContent[0].language; // Use first language for syntax highlighting
+                        title = `Multiple code blocks (${largeBlocks.length} large blocks)`;
+                        language = largeBlocks[0].language; // Use first language for syntax highlighting
                     }
 
                     const artifact = {
@@ -571,6 +569,11 @@ export default function Message({ role, content, timestamp, onArtifactCreate, on
                                     language={part.language}
                                 />
                             ) : part.type === 'artifact_reference' ? (
+                                <ArtifactCard
+                                    onViewArtifact={handleViewArtifact}
+                                    artifact={createdArtifact}
+                                />
+                            ) : part.type === 'artifact_reference_inline' ? (
                                 <ArtifactCard
                                     onViewArtifact={handleViewArtifact}
                                     artifact={createdArtifact}

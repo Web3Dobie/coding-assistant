@@ -96,27 +96,27 @@ const shouldCreateArtifact = (content) => {
         }
     }
 
-    // Check for substantial code blocks (>20 lines)
+    // Check for substantial code blocks (>15 lines) - lowered threshold
     const codeBlocks = content.match(/```(\w+)?\n([\s\S]*?)```/g);
     if (codeBlocks) {
         for (let i = 0; i < codeBlocks.length; i++) {
             const block = codeBlocks[i];
             const match = block.match(/```(\w+)?\n([\s\S]*?)```/);
-            if (match && match[2].split('\n').length > 20) {
+            if (match && match[2].split('\n').length > 15) {
                 return true;
             }
         }
     }
 
-    // Check for long content that would benefit from artifact view
-    if (content.length > 800 && (content.includes('```') || content.includes('#') || content.includes('##'))) {
+    // Check for multiple code blocks
+    if (codeBlocks && codeBlocks.length > 1) {
         return true;
     }
 
     return false;
 };
 
-// Process message content and completely remove artifact code blocks
+// Process message content and keep small code blocks in conversation
 const processMessageContent = (content, hasArtifact = false) => {
     if (hasArtifact) {
         // For README and other file artifacts, show only a brief intro
@@ -155,37 +155,69 @@ const processMessageContent = (content, hasArtifact = false) => {
             }];
         }
 
-        // For other artifacts, remove code blocks
-        let processedContent = content;
-        processedContent = processedContent.replace(/```[\w]*\n[\s\S]*?```/g, '');
-        processedContent = processedContent.replace(/\n{3,}/g, '\n\n');
-        processedContent = processedContent.trim();
+        // For code artifacts, keep explanatory text and small code blocks
+        const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
+        const parts = [];
+        let lastIndex = 0;
+        let match;
+        let hasLargeCodeBlock = false;
 
-        if (processedContent) {
-            return [{
-                type: 'text',
-                content: processedContent
-            }, {
-                type: 'artifact_reference',
-                content: ''
-            }];
-        } else {
-            return [{
-                type: 'artifact_reference',
-                content: ''
-            }];
+        while ((match = codeBlockRegex.exec(content)) !== null) {
+            const lineCount = match[2].split('\n').length;
+
+            // Add text before code block
+            if (match.index > lastIndex) {
+                parts.push({
+                    type: 'text',
+                    content: content.slice(lastIndex, match.index)
+                });
+            }
+
+            // Keep small code blocks (<=10 lines) in conversation
+            if (lineCount <= 10) {
+                parts.push({
+                    type: 'code',
+                    language: match[1] || 'text',
+                    content: match[2].trim()
+                });
+            } else {
+                hasLargeCodeBlock = true;
+                // Replace large code blocks with reference
+                parts.push({
+                    type: 'text',
+                    content: `\n*[Large ${match[1] || 'code'} block moved to artifact panel]*\n`
+                });
+            }
+
+            lastIndex = match.index + match[0].length;
         }
+
+        // Add remaining text
+        if (lastIndex < content.length) {
+            parts.push({
+                type: 'text',
+                content: content.slice(lastIndex)
+            });
+        }
+
+        // Add artifact reference if we had large code blocks
+        if (hasLargeCodeBlock) {
+            parts.push({
+                type: 'artifact_reference',
+                content: ''
+            });
+        }
+
+        return parts.length > 0 ? parts : [{ type: 'text', content }];
     }
 
-    // For non-artifact messages, process normally but only show small code blocks
+    // For non-artifact messages, process normally
     const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
     const parts = [];
     let lastIndex = 0;
     let match;
 
     while ((match = codeBlockRegex.exec(content)) !== null) {
-        const lineCount = match[2].split('\n').length;
-
         // Add text before code block
         if (match.index > lastIndex) {
             parts.push({
@@ -194,14 +226,12 @@ const processMessageContent = (content, hasArtifact = false) => {
             });
         }
 
-        // Only include small code blocks (<=10 lines)
-        if (lineCount <= 10) {
-            parts.push({
-                type: 'code',
-                language: match[1] || 'text',
-                content: match[2].trim()
-            });
-        }
+        // Include all code blocks for non-artifact messages
+        parts.push({
+            type: 'code',
+            language: match[1] || 'text',
+            content: match[2].trim()
+        });
 
         lastIndex = match.index + match[0].length;
     }
@@ -222,12 +252,21 @@ const CodeBlock = ({ code, language }) => {
     const [copied, setCopied] = useState(false);
 
     const copyToClipboard = () => {
-        navigator.clipboard.writeText(code);
+        // Copy the clean code without HTML tags
+        const cleanCode = code.replace(/<[^>]*>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+        navigator.clipboard.writeText(cleanCode);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
     };
 
-    const highlightedCode = highlightCode(code, language);
+    // Clean the code first, then apply highlighting
+    const cleanCode = code
+        .replace(/#[a-fA-F0-9]{6};">/g, '') // Remove color hex codes
+        .replace(/<span[^>]*color:[^>]*>/g, '') // Remove color spans
+        .replace(/<\/span>/g, '') // Remove closing spans
+        .replace(/;\s*color:\s*#[a-fA-F0-9]{6};\s*font-weight:\s*bold;?/g, ''); // Remove CSS
+
+    const highlightedCode = highlightCode(cleanCode, language);
 
     return (
         <div className="my-3 rounded-md overflow-hidden bg-gray-50">
@@ -245,6 +284,7 @@ const CodeBlock = ({ code, language }) => {
                 style={{
                     backgroundColor: vsCodeTheme.background,
                     color: vsCodeTheme.foreground,
+                    lineHeight: '1.4'
                 }}
             >
                 <pre
@@ -257,16 +297,18 @@ const CodeBlock = ({ code, language }) => {
 };
 
 // Artifact reference card component
-const ArtifactCard = ({ onViewArtifact }) => {
+const ArtifactCard = ({ onViewArtifact, artifact }) => {
     return (
         <div className="my-4 p-3 bg-blue-50 border border-blue-200 rounded-md cursor-pointer hover:bg-blue-100 transition-colors"
             onClick={onViewArtifact}>
             <div className="flex items-center gap-3">
                 <div className="w-8 h-8 bg-blue-500 rounded-md flex items-center justify-center text-white text-sm">
-                    📄
+                    {artifact?.type === 'file' ? '📄' : '⚡'}
                 </div>
                 <div className="flex-1">
-                    <div className="text-sm font-medium text-blue-900">Generated Content</div>
+                    <div className="text-sm font-medium text-blue-900">
+                        {artifact?.title || 'Generated Content'}
+                    </div>
                     <div className="text-xs text-blue-600">View in side panel →</div>
                 </div>
             </div>
@@ -274,9 +316,21 @@ const ArtifactCard = ({ onViewArtifact }) => {
     );
 };
 
-// Format regular text with minimal styling
+// Format regular text with minimal styling - clean up broken HTML
 const formatText = (text) => {
-    return text
+    // First, clean up any broken HTML color codes that appear in plain text
+    let cleanText = text
+        .replace(/#[a-fA-F0-9]{6};">/g, '') // Remove color hex codes with ;">
+        .replace(/<span[^>]*color:[^>]*>/g, '') // Remove opening color spans
+        .replace(/<\/span>/g, '') // Remove closing spans
+        .replace(/`#[a-fA-F0-9]{6};">```/g, '```') // Fix broken code block markers
+        .replace(/`#[a-fA-F0-9]{6};">`/g, '`') // Fix broken inline code markers
+        .replace(/#[a-fA-F0-9]{6};">/g, '') // Remove any remaining color codes
+        .replace(/;\s*color:\s*#[a-fA-F0-9]{6};\s*font-weight:\s*bold;?/g, '') // Remove CSS properties
+        .replace(/"/g, '"') // Fix smart quotes
+        .replace(/"/g, '"'); // Fix smart quotes
+
+    return cleanText
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>')
         .replace(/`([^`]+\.(js|jsx|ts|tsx|py|css|html|json|md|txt|yml|yaml|env|gitignore|dockerfile))`/gi, '<code class="bg-red-100 text-red-800 px-1 rounded text-sm font-mono">$1</code>')
@@ -285,7 +339,7 @@ const formatText = (text) => {
         .replace(/\n/g, '<br>');
 };
 
-export default function Message({ role, content, timestamp, onArtifactCreate }) {
+export default function Message({ role, content, timestamp, onArtifactCreate, onArtifactView }) {
     const [createdArtifact, setCreatedArtifact] = useState(null);
 
     // Check if this message should create an artifact
@@ -326,24 +380,27 @@ export default function Message({ role, content, timestamp, onArtifactCreate }) 
                 let artifactContent = content;
 
                 // Try to extract content between --- markers or after ":" 
-                const contentAfterColon = content.match(/.*?:\s*\n\n([\s\S]*?)(?:\n\nLet me know|$)/);
+                const contentAfterColon = content.match(/.*?:\s*\n\n([\s\S]*?)(?:\n\n(?:Let me know|Feel free|If you|Would you like|Please let me know).*|$)/i);
                 if (contentAfterColon) {
                     artifactContent = contentAfterColon[1].trim();
                 } else {
                     // Try to extract content after the intro paragraph
-                    const contentAfterIntro = content.match(/.*?(?:context|structure):\s*\n\n([\s\S]*?)(?:\n\nLet me know|$)/);
+                    const contentAfterIntro = content.match(/.*?(?:context|structure):\s*\n\n([\s\S]*?)(?:\n\n(?:Let me know|Feel free|If you|Would you like|Please let me know).*|$)/i);
                     if (contentAfterIntro) {
                         artifactContent = contentAfterIntro[1].trim();
                     } else {
                         // Try to extract content between --- markers
-                        const contentBetweenDashes = content.match(/---\s*\n\n([\s\S]*?)(?:\n\nLet me know|$)/);
+                        const contentBetweenDashes = content.match(/---\s*\n\n([\s\S]*?)(?:\n\n(?:Let me know|Feel free|If you|Would you like|Please let me know).*|$)/i);
                         if (contentBetweenDashes) {
                             artifactContent = contentBetweenDashes[1].trim();
                         } else {
                             // Fallback: look for markdown content starting with #
-                            const markdownMatch = content.match(/(^|\n)(# .+[\s\S]*?)(?:\n\nLet me know|$)/);
+                            const markdownMatch = content.match(/(^|\n)(# .+[\s\S]*?)(?:\n\n(?:Let me know|Feel free|If you|Would you like|Please let me know).*|$)/i);
                             if (markdownMatch) {
                                 artifactContent = markdownMatch[2].trim();
+                            } else {
+                                // Last resort: remove ending manually
+                                artifactContent = content.replace(/\n\n(?:Let me know|Feel free|If you|Would you like|Please let me know).*$/i, '').trim();
                             }
                         }
                     }
@@ -361,25 +418,63 @@ export default function Message({ role, content, timestamp, onArtifactCreate }) 
                 return;
             }
 
-            // Check for substantial code blocks (>20 lines)
+            // Check for substantial code blocks or multiple blocks
             const codeBlocks = content.match(/```(\w+)?\n([\s\S]*?)```/g);
             if (codeBlocks) {
+                // Check if we have multiple blocks or one large block
+                let hasLargeBlock = false;
+                let allCodeContent = [];
+
                 for (let i = 0; i < codeBlocks.length; i++) {
                     const block = codeBlocks[i];
                     const match = block.match(/```(\w+)?\n([\s\S]*?)```/);
-                    if (match && match[2].split('\n').length > 20) {
+                    if (match) {
+                        const lineCount = match[2].split('\n').length;
                         const language = match[1] || 'text';
-                        const artifact = {
-                            id: `artifact-${Date.now()}-${i}`,
-                            type: 'code',
-                            title: `${language} code`,
-                            language: language,
-                            content: match[2].trim()
-                        };
-                        setCreatedArtifact(artifact);
-                        onArtifactCreate(artifact);
-                        return;
+
+                        if (lineCount > 15 || codeBlocks.length > 1) {
+                            hasLargeBlock = true;
+                            allCodeContent.push({
+                                language: language,
+                                content: match[2].trim(),
+                                lines: lineCount
+                            });
+                        }
                     }
+                }
+
+                if (hasLargeBlock && allCodeContent.length > 0) {
+                    // Create artifact with all code blocks
+                    let combinedContent;
+                    let title;
+                    let language;
+
+                    if (allCodeContent.length === 1) {
+                        // Single large block
+                        combinedContent = allCodeContent[0].content;
+                        title = `${allCodeContent[0].language} code`;
+                        language = allCodeContent[0].language;
+                    } else {
+                        // Multiple blocks - combine them with separators
+                        combinedContent = allCodeContent.map((block, idx) => {
+                            const separator = idx === 0 ? '' : `\n\n# ===== ${block.language.toUpperCase()} BLOCK ${idx + 1} =====\n\n`;
+                            return separator + block.content;
+                        }).join('');
+
+                        title = `Multiple code blocks (${allCodeContent.length} blocks)`;
+                        language = allCodeContent[0].language; // Use first language for syntax highlighting
+                    }
+
+                    const artifact = {
+                        id: `artifact-${Date.now()}`,
+                        type: 'code',
+                        title: title,
+                        language: language,
+                        content: combinedContent
+                    };
+                    setCreatedArtifact(artifact);
+                    onArtifactCreate(artifact);
+                    return;
                 }
             }
 
@@ -419,8 +514,12 @@ export default function Message({ role, content, timestamp, onArtifactCreate }) 
     };
 
     const handleViewArtifact = () => {
-        if (createdArtifact && onArtifactCreate) {
-            onArtifactCreate(createdArtifact);
+        if (createdArtifact) {
+            if (onArtifactView) {
+                onArtifactView(createdArtifact.id);
+            } else if (onArtifactCreate) {
+                onArtifactCreate(createdArtifact);
+            }
         }
     };
 
@@ -472,7 +571,10 @@ export default function Message({ role, content, timestamp, onArtifactCreate }) 
                                     language={part.language}
                                 />
                             ) : part.type === 'artifact_reference' ? (
-                                <ArtifactCard onViewArtifact={handleViewArtifact} />
+                                <ArtifactCard
+                                    onViewArtifact={handleViewArtifact}
+                                    artifact={createdArtifact}
+                                />
                             ) : part.content ? (
                                 <div
                                     className="text-gray-900 leading-relaxed break-words"

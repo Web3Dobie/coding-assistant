@@ -11,6 +11,7 @@ export default function App() {
   const [loadingRepos, setLoadingRepos] = useState(true);
   const [attachedFiles, setAttachedFiles] = useState([]);
   const [currentArtifact, setCurrentArtifact] = useState(null);
+  const [artifactHistory, setArtifactHistory] = useState([]); // Keep track of all artifacts
   const [artifactPanelWidth, setArtifactPanelWidth] = useState(50); // Percentage
 
   const textareaRef = useRef(null);
@@ -159,16 +160,21 @@ export default function App() {
         const filePath = filePathParts.join(" ");
 
         if (!filePath) {
-          setMessages([...messages, { role: "system", content: `❌ Please specify a file path. Usage: /attach-file [repo]/[file_path]\nExample: /attach-file Trading-Bot/main.py` }]);
+          setMessages([...messages, { role: "system", content: `❌ Please specify a file path. Usage: /attach-file [repo]/[file_path] or /attach-file [file_path]\nExample: /attach-file Trading-Bot/main.py or /attach-file README.md` }]);
           return;
         }
 
-        if (!filePath.includes('/')) {
-          setMessages([...messages, { role: "system", content: `❌ File path must include repository name. Usage: /attach-file [repo]/[file_path]\nExample: /attach-file Trading-Bot/main.py` }]);
+        // Handle files in root directory or with repo prefix
+        let finalFilePath = filePath;
+        if (!filePath.includes('/') && project) {
+          // File in root of current project
+          finalFilePath = `${project}/${filePath}`;
+        } else if (!filePath.includes('/')) {
+          setMessages([...messages, { role: "system", content: `❌ Please specify a repository name or select a current project. Usage: /attach-file [repo]/[file_path]\nExample: /attach-file Trading-Bot/main.py` }]);
           return;
         }
 
-        const response = await fetch(`${API_BASE_URL}/get-file?file_path=${encodeURIComponent(filePath)}`, {
+        const response = await fetch(`${API_BASE_URL}/get-file?file_path=${encodeURIComponent(finalFilePath)}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
         });
@@ -690,7 +696,17 @@ export default function App() {
                     role={msg.role}
                     content={msg.content}
                     timestamp={msg.timestamp}
-                    onArtifactCreate={(artifact) => setCurrentArtifact({ ...artifact, messageIndex: idx })}
+                    onArtifactCreate={(artifact) => {
+                      const artifactWithIndex = { ...artifact, messageIndex: idx };
+                      setCurrentArtifact(artifactWithIndex);
+                      setArtifactHistory(prev => [...prev, artifactWithIndex]);
+                    }}
+                    onArtifactView={(artifactId) => {
+                      const artifact = artifactHistory.find(a => a.id === artifactId);
+                      if (artifact) {
+                        setCurrentArtifact(artifact);
+                      }
+                    }}
                   />
                 ))
               )}

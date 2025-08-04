@@ -72,174 +72,153 @@ const highlightCode = (code, language) => {
     return highlighted;
 };
 
-// Check if content should create an artifact
-const shouldCreateArtifact = (content) => {
-    // Check for complete files with more flexible patterns
-    const fileHeaderPatterns = [
-        /Here's a draft for the ([\w-]+\.[\w]+)/i,
-        /Below is a draft.*?for the ([\w-]+\.[\w]+)/i,
-        /Here's a detailed.*?([\w-]+\.[\w]+)/i,
-        /Here's the.*?([\w-]+\.[\w]+)/i,
-        /Here's your.*?([\w-]+\.[\w]+)/i,
-        /draft.*?for the ([\w-]+\.[\w]+)/i,
-        /README\.md.*?file/i,
-        /for the.*?([\w-]+\.[\w]+).*?project/i,
-        /draft.*?README\.md/i
-    ];
-
-    for (const pattern of fileHeaderPatterns) {
-        const fileMatch = content.match(pattern);
-        if (fileMatch) {
-            if (content.length > 800) {
-                return true;
-            }
-        }
-    }
-
-    // Check for large code blocks only (>8 lines)
-    const codeBlocks = content.match(/```(\w+)?\n([\s\S]*?)```/g);
-    if (codeBlocks) {
-        for (let i = 0; i < codeBlocks.length; i++) {
-            const block = codeBlocks[i];
-            const match = block.match(/```(\w+)?\n([\s\S]*?)```/);
-            if (match && match[2].split('\n').length > 8) {
-                return true;
-            }
-        }
-    }
-
-    return false;
-};
-
-// Process message content and keep small code blocks in conversation
-const processMessageContent = (content, hasArtifact = false) => {
-    if (hasArtifact) {
-        // For README and other file artifacts, show only a brief intro
-        const filePatterns = [
-            /Here's a draft for the ([\w-]+\.[\w]+)/i,
-            /Below is a draft.*?for the ([\w-]+\.[\w]+)/i,
-            /Here's a detailed.*?([\w-]+\.[\w]+)/i,
-            /Here's the.*?([\w-]+\.[\w]+)/i,
-            /Here's your.*?([\w-]+\.[\w]+)/i,
-            /draft.*?for the ([\w-]+\.[\w]+)/i,
-            /README\.md.*?file/i,
-            /for the.*?([\w-]+\.[\w]+).*?project/i,
-            /draft.*?README\.md/i
-        ];
-
-        // Check if this is a file artifact
-        let isFileArtifact = false;
-        for (const pattern of filePatterns) {
-            if (content.match(pattern)) {
-                isFileArtifact = true;
-                break;
-            }
-        }
-
-        if (isFileArtifact) {
-            // Extract just the intro text (first paragraph or sentence)
-            const introMatch = content.match(/^(.*?(?:\n\n|$))/);
-            const introText = introMatch ? introMatch[1].trim() : "Generated content";
-
-            return [{
-                type: 'text',
-                content: introText
-            }, {
-                type: 'artifact_reference',
-                content: ''
-            }];
-        }
-
-        // For code artifacts, keep explanatory text and small code blocks
-        const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
-        const parts = [];
-        let lastIndex = 0;
-        let match;
-        let hasLargeCodeBlock = false;
-
-        while ((match = codeBlockRegex.exec(content)) !== null) {
-            const lineCount = match[2].split('\n').length;
-
-            // Add text before code block
-            if (match.index > lastIndex) {
-                parts.push({
-                    type: 'text',
-                    content: content.slice(lastIndex, match.index)
-                });
-            }
-
-            // Keep small code blocks (<=10 lines) in conversation
-            if (lineCount <= 10) {
-                parts.push({
-                    type: 'code',
-                    language: match[1] || 'text',
-                    content: match[2].trim()
-                });
-            } else {
-                hasLargeCodeBlock = true;
-                // Replace large code blocks with reference
-                parts.push({
-                    type: 'text',
-                    content: `\n*[Large ${match[1] || 'code'} block moved to artifact panel]*\n`
-                });
-            }
-
-            lastIndex = match.index + match[0].length;
-        }
-
-        // Add remaining text
-        if (lastIndex < content.length) {
-            parts.push({
-                type: 'text',
-                content: content.slice(lastIndex)
-            });
-        }
-
-        // Add artifact reference if we had large code blocks
-        if (hasLargeCodeBlock) {
-            parts.push({
-                type: 'artifact_reference',
-                content: ''
-            });
-        }
-
-        return parts.length > 0 ? parts : [{ type: 'text', content }];
-    }
-
-    // For non-artifact messages, process normally
-    const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
+// Detect if content should create artifacts and where
+const analyzeContentForArtifacts = (content) => {
+    const artifacts = [];
     const parts = [];
-    let lastIndex = 0;
+    let currentIndex = 0;
+
+    // Look for code blocks
+    const codeBlockRegex = /```(\w+)?\n([\s\S]*?)```/g;
     let match;
 
     while ((match = codeBlockRegex.exec(content)) !== null) {
-        // Add text before code block
-        if (match.index > lastIndex) {
+        const language = match[1] || 'text';
+        const code = match[2].trim();
+        const lineCount = code.split('\n').length;
+
+        // Add text before this code block
+        if (match.index > currentIndex) {
             parts.push({
                 type: 'text',
-                content: content.slice(lastIndex, match.index)
+                content: content.slice(currentIndex, match.index)
             });
         }
 
-        // Include all code blocks for non-artifact messages
-        parts.push({
-            type: 'code',
-            language: match[1] || 'text',
-            content: match[2].trim()
-        });
+        // Determine if this should be an artifact (>10 lines or specific file patterns)
+        const isLargeBlock = lineCount > 10;
+        const isFileContent = /Here's.*?(?:file|updated|complete|full)/i.test(content.slice(Math.max(0, match.index - 100), match.index + 100));
 
-        lastIndex = match.index + match[0].length;
+        if (isLargeBlock || isFileContent) {
+            // Create artifact
+            const artifactId = `artifact-${Date.now()}-${artifacts.length}`;
+            const artifact = {
+                id: artifactId,
+                type: 'code',
+                title: detectArtifactTitle(content, match.index, language, lineCount),
+                language: language,
+                content: code,
+                version: 1,
+                createdAt: new Date().toISOString()
+            };
+
+            artifacts.push(artifact);
+
+            // Add artifact card in place of code block
+            parts.push({
+                type: 'artifact_card',
+                artifactId: artifactId,
+                artifact: artifact
+            });
+        } else {
+            // Keep small code block inline
+            parts.push({
+                type: 'code',
+                language: language,
+                content: code
+            });
+        }
+
+        currentIndex = match.index + match[0].length;
     }
 
     // Add remaining text
-    if (lastIndex < content.length) {
+    if (currentIndex < content.length) {
         parts.push({
             type: 'text',
-            content: content.slice(lastIndex)
+            content: content.slice(currentIndex)
         });
     }
 
-    return parts.length > 0 ? parts : [{ type: 'text', content }];
+    // If no code blocks found, check for file patterns
+    if (artifacts.length === 0) {
+        const filePatterns = [
+            /Here's.*?(?:updated|complete|full|new).*?(?:file|implementation|solution)/i,
+            /I've (?:created|updated|modified).*?(?:file|code|implementation)/i,
+            /(?:Updated|Modified|Created).*?file/i
+        ];
+
+        for (const pattern of filePatterns) {
+            if (pattern.test(content) && content.length > 800) {
+                const artifactId = `artifact-${Date.now()}`;
+                const artifact = {
+                    id: artifactId,
+                    type: 'document',
+                    title: 'Generated Content',
+                    language: 'markdown',
+                    content: content,
+                    version: 1,
+                    createdAt: new Date().toISOString()
+                };
+
+                artifacts.push(artifact);
+
+                // Replace content with summary + artifact card
+                return {
+                    artifacts,
+                    parts: [
+                        { type: 'text', content: content.split('\n')[0] + '...' },
+                        { type: 'artifact_card', artifactId: artifactId, artifact: artifact }
+                    ]
+                };
+            }
+        }
+    }
+
+    return { artifacts, parts: parts.length > 0 ? parts : [{ type: 'text', content }] };
+};
+
+// Detect appropriate title for artifact
+const detectArtifactTitle = (fullContent, codeIndex, language, lineCount) => {
+    // Look for file references near the code block
+    const contextBefore = fullContent.slice(Math.max(0, codeIndex - 200), codeIndex);
+    const contextAfter = fullContent.slice(codeIndex, codeIndex + 200);
+
+    // Check for file names
+    const filePattern = /(?:file|named|called)\s+["`']?([a-zA-Z0-9_.-]+\.[a-zA-Z0-9]+)["`']?/i;
+    const fileMatch = (contextBefore + contextAfter).match(filePattern);
+    if (fileMatch) {
+        return fileMatch[1];
+    }
+
+    // Check for component names
+    const componentPattern = /(?:component|class|function)\s+([A-Z][a-zA-Z0-9]+)/i;
+    const componentMatch = (contextBefore + contextAfter).match(componentPattern);
+    if (componentMatch) {
+        return `${componentMatch[1]} Component`;
+    }
+
+    // Check for descriptive context
+    const descriptionPatterns = [
+        /(?:updated|modified|created|here's)\s+(?:the\s+)?([^.]+?)(?:\s+(?:file|code|implementation))?[:.]/i,
+        /Here's\s+([^:]+):/i
+    ];
+
+    for (const pattern of descriptionPatterns) {
+        const match = (contextBefore + contextAfter).match(pattern);
+        if (match && match[1].length < 50) {
+            return match[1].trim();
+        }
+    }
+
+    // Default titles based on language and size
+    if (lineCount > 50) {
+        return `Large ${language} implementation`;
+    } else if (lineCount > 20) {
+        return `${language} code block`;
+    } else {
+        return `${language} snippet`;
+    }
 };
 
 // Small code block component for inline display
@@ -247,31 +226,36 @@ const CodeBlock = ({ code, language }) => {
     const [copied, setCopied] = useState(false);
 
     const copyToClipboard = () => {
-        // Copy the clean code without HTML tags
-        const cleanCode = code.replace(/<[^>]*>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
-        navigator.clipboard.writeText(cleanCode);
+        navigator.clipboard.writeText(code);
         setCopied(true);
         setTimeout(() => setCopied(false), 2000);
     };
 
-    // Clean the code first, then apply highlighting
-    const cleanCode = code
-        .replace(/#[a-fA-F0-9]{6};">/g, '') // Remove color hex codes
-        .replace(/<span[^>]*color:[^>]*>/g, '') // Remove color spans
-        .replace(/<\/span>/g, '') // Remove closing spans
-        .replace(/;\s*color:\s*#[a-fA-F0-9]{6};\s*font-weight:\s*bold;?/g, ''); // Remove CSS
-
-    const highlightedCode = highlightCode(cleanCode, language);
+    const highlightedCode = highlightCode(code, language);
 
     return (
-        <div className="my-3 rounded-md overflow-hidden bg-gray-50">
-            <div className="flex items-center justify-between px-3 py-2 bg-gray-100 text-xs">
-                <span className="font-medium text-gray-600">{language || 'code'}</span>
+        <div className="my-3 rounded-lg overflow-hidden border border-gray-200">
+            <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200">
+                <span className="text-xs font-medium text-gray-600 uppercase">{language || 'code'}</span>
                 <button
                     onClick={copyToClipboard}
-                    className="text-gray-500 hover:text-gray-700 transition-colors"
+                    className="text-xs text-gray-500 hover:text-gray-700 transition-colors flex items-center gap-1"
                 >
-                    {copied ? '✓' : 'Copy'}
+                    {copied ? (
+                        <>
+                            <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                                <path fillRule="evenodd" d="M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z" clipRule="evenodd" />
+                            </svg>
+                            Copied
+                        </>
+                    ) : (
+                        <>
+                            <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                            </svg>
+                            Copy
+                        </>
+                    )}
                 </button>
             </div>
             <div
@@ -291,45 +275,85 @@ const CodeBlock = ({ code, language }) => {
     );
 };
 
-// Artifact reference card component
-const ArtifactCard = ({ onViewArtifact, artifact }) => {
+// Claude-style artifact card component
+const ArtifactCard = ({ artifact, onViewArtifact, onUpdateArtifact }) => {
+    const getArtifactIcon = () => {
+        switch (artifact.language) {
+            case 'javascript':
+            case 'js':
+            case 'jsx':
+                return '🟨';
+            case 'python':
+            case 'py':
+                return '🐍';
+            case 'html':
+                return '🌐';
+            case 'css':
+                return '🎨';
+            case 'json':
+                return '📋';
+            case 'markdown':
+            case 'md':
+                return '📝';
+            case 'bash':
+            case 'shell':
+                return '⚡';
+            default:
+                return '📄';
+        }
+    };
+
+    const getLineCount = () => {
+        return artifact.content.split('\n').length;
+    };
+
     return (
-        <div className="my-4 p-3 bg-blue-50 border border-blue-200 rounded-md cursor-pointer hover:bg-blue-100 transition-colors"
-            onClick={onViewArtifact}>
-            <div className="flex items-center gap-3">
-                <div className="w-8 h-8 bg-blue-500 rounded-md flex items-center justify-center text-white text-sm">
-                    {artifact?.type === 'file' ? '📄' : '⚡'}
-                </div>
-                <div className="flex-1">
-                    <div className="text-sm font-medium text-blue-900">
-                        {artifact?.title || 'Generated Content'}
+        <div className="my-4 p-4 bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <div className="text-xl">{getArtifactIcon()}</div>
+                    <div className="flex-1 min-w-0">
+                        <div className="text-sm font-medium text-gray-900 truncate">
+                            {artifact.title}
+                        </div>
+                        <div className="text-xs text-gray-500 flex items-center gap-2">
+                            <span>{artifact.language}</span>
+                            <span>•</span>
+                            <span>{getLineCount()} lines</span>
+                            {artifact.version > 1 && (
+                                <>
+                                    <span>•</span>
+                                    <span>v{artifact.version}</span>
+                                </>
+                            )}
+                        </div>
                     </div>
-                    <div className="text-xs text-blue-600">View in side panel →</div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => onViewArtifact(artifact)}
+                        className="px-3 py-1.5 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors border border-blue-200"
+                    >
+                        View code
+                    </button>
+                    {onUpdateArtifact && (
+                        <button
+                            onClick={() => onUpdateArtifact(artifact)}
+                            className="px-3 py-1.5 text-xs text-gray-600 hover:text-gray-800 hover:bg-gray-50 rounded transition-colors border border-gray-200"
+                        >
+                            Edit
+                        </button>
+                    )}
                 </div>
             </div>
         </div>
     );
 };
 
-// Format regular text with minimal styling - clean up broken HTML
+// Format regular text with minimal styling
 const formatText = (text) => {
-    // First, clean up any broken HTML color codes that appear in plain text
-    let cleanText = text
-        .replace(/#[a-fA-F0-9]{6};">/g, '') // Remove color hex codes with ;">
-        .replace(/<span[^>]*color:[^>]*>/g, '') // Remove opening color spans
-        .replace(/<\/span>/g, '') // Remove closing spans
-        .replace(/`#[a-fA-F0-9]{6};">```/g, '```') // Fix broken code block markers
-        .replace(/`#[a-fA-F0-9]{6};">`/g, '`') // Fix broken inline code markers
-        .replace(/#[a-fA-F0-9]{6};">/g, '') // Remove any remaining color codes
-        .replace(/;\s*color:\s*#[a-fA-F0-9]{6};\s*font-weight:\s*bold;?/g, '') // Remove CSS properties
-        .replace(/color:\s*#[a-fA-F0-9]{6};\s*font-weight:\s*bold;?\s*">/g, '') // Remove more CSS
-        .replace(/color:\s*#[a-fA-F0-9]{6};\s*">/g, '') // Remove color CSS
-        .replace(/font-weight:\s*bold;\s*">/g, '') // Remove font-weight CSS
-        .replace(/"/g, '"') // Fix smart quotes
-        .replace(/"/g, '"') // Fix smart quotes
-        .replace(/\*\[Large.*?block moved to artifact panel\]\*/g, ''); // Remove placeholder text
-
-    return cleanText
+    return text
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>')
         .replace(/`([^`]+\.(js|jsx|ts|tsx|py|css|html|json|md|txt|yml|yaml|env|gitignore|dockerfile))`/gi, '<code class="bg-red-100 text-red-800 px-1 rounded text-sm font-mono">$1</code>')
@@ -338,187 +362,87 @@ const formatText = (text) => {
         .replace(/\n/g, '<br>');
 };
 
-export default function Message({ role, content, timestamp, onArtifactCreate, onArtifactView }) {
-    const [createdArtifact, setCreatedArtifact] = useState(null);
+export default function Message({
+    role,
+    content,
+    timestamp,
+    messageIndex,
+    artifactStore,
+    onArtifactCreate,
+    onArtifactView,
+    onArtifactUpdate
+}) {
+    const [processedContent, setProcessedContent] = useState(null);
 
-    // Check if this message should create an artifact
-    const hasArtifact = role === 'assistant' ? shouldCreateArtifact(content) : false;
-    const parts = processMessageContent(content, hasArtifact);
-
-    // Create artifact when needed
+    // Process content when message loads or updates
     useEffect(() => {
-        if (role === 'assistant' && onArtifactCreate && hasArtifact) {
-            // Check for file references with flexible patterns
-            const filePatterns = [
-                /Here's a draft for the ([\w-]+\.[\w]+)/i,
-                /Below is a draft.*?for the ([\w-]+\.[\w]+)/i,
-                /Here's a detailed.*?([\w-]+\.[\w]+)/i,
-                /Here's the.*?([\w-]+\.[\w]+)/i,
-                /Here's your.*?([\w-]+\.[\w]+)/i,
-                /draft.*?for the ([\w-]+\.[\w]+)/i,
-                /README\.md.*?file/i,
-                /for the.*?([\w-]+\.[\w]+).*?project/i,
-                /draft.*?README\.md/i
-            ];
+        if (role === 'assistant') {
+            const analysis = analyzeContentForArtifacts(content);
 
-            let fileMatch = null;
-            let filename = null;
+            // Store any new artifacts with intelligent versioning
+            if (analysis.artifacts.length > 0 && onArtifactCreate) {
+                analysis.artifacts.forEach(artifact => {
+                    // Check for similar existing artifacts to determine if this should be a new version
+                    const similarArtifact = artifactStore?.findSimilarArtifact(
+                        artifact.content,
+                        artifact.language,
+                        0.6
+                    );
 
-            for (const pattern of filePatterns) {
-                fileMatch = content.match(pattern);
-                if (fileMatch) {
-                    filename = fileMatch[1] || 'README.md';
-                    break;
-                }
-            }
+                    if (similarArtifact && shouldCreateNewVersion(similarArtifact, artifact)) {
+                        // Create new version of existing artifact
+                        const newVersion = onArtifactCreate(artifact, messageIndex, similarArtifact.baseId);
 
-            if (fileMatch && filename) {
-                const extension = filename.split('.').pop() || 'txt';
-
-                // For README files, extract the actual file content
-                let artifactContent = content;
-
-                // Try to extract content between --- markers or after ":" 
-                const contentAfterColon = content.match(/.*?:\s*\n\n([\s\S]*?)(?:\n\n(?:Let me know|Feel free|If you|Would you like|Please let me know).*|$)/i);
-                if (contentAfterColon) {
-                    artifactContent = contentAfterColon[1].trim();
-                } else {
-                    // Try to extract content after the intro paragraph
-                    const contentAfterIntro = content.match(/.*?(?:context|structure):\s*\n\n([\s\S]*?)(?:\n\n(?:Let me know|Feel free|If you|Would you like|Please let me know).*|$)/i);
-                    if (contentAfterIntro) {
-                        artifactContent = contentAfterIntro[1].trim();
-                    } else {
-                        // Try to extract content between --- markers
-                        const contentBetweenDashes = content.match(/---\s*\n\n([\s\S]*?)(?:\n\n(?:Let me know|Feel free|If you|Would you like|Please let me know).*|$)/i);
-                        if (contentBetweenDashes) {
-                            artifactContent = contentBetweenDashes[1].trim();
-                        } else {
-                            // Fallback: look for markdown content starting with #
-                            const markdownMatch = content.match(/(^|\n)(# .+[\s\S]*?)(?:\n\n(?:Let me know|Feel free|If you|Would you like|Please let me know).*|$)/i);
-                            if (markdownMatch) {
-                                artifactContent = markdownMatch[2].trim();
-                            } else {
-                                // Last resort: remove ending manually
-                                artifactContent = content.replace(/\n\n(?:Let me know|Feel free|If you|Would you like|Please let me know).*$/i, '').trim();
+                        // Update the artifact reference in parts
+                        analysis.parts.forEach(part => {
+                            if (part.type === 'artifact_card' && part.artifactId === artifact.id) {
+                                part.artifact = newVersion;
+                                part.artifactId = newVersion.id;
                             }
-                        }
-                    }
-                }
-
-                const artifact = {
-                    id: `artifact-${Date.now()}`,
-                    type: 'file',
-                    title: filename,
-                    language: getLanguageFromExtension(extension),
-                    content: artifactContent
-                };
-                setCreatedArtifact(artifact);
-                onArtifactCreate(artifact);
-                return;
-            }
-
-            // Check for substantial code blocks or multiple blocks
-            const codeBlocks = content.match(/```(\w+)?\n([\s\S]*?)```/g);
-            if (codeBlocks) {
-                // Only include LARGE blocks (>8 lines) in artifacts
-                let largeBlocks = [];
-
-                for (let i = 0; i < codeBlocks.length; i++) {
-                    const block = codeBlocks[i];
-                    const match = block.match(/```(\w+)?\n([\s\S]*?)```/);
-                    if (match) {
-                        const lineCount = match[2].split('\n').length;
-                        const language = match[1] || 'text';
-
-                        // Only include blocks with >8 lines in artifact
-                        if (lineCount > 8) {
-                            largeBlocks.push({
-                                language: language,
-                                content: match[2].trim(),
-                                lines: lineCount
-                            });
-                        }
-                    }
-                }
-
-                if (largeBlocks.length > 0) {
-                    // Create artifact with only large code blocks
-                    let combinedContent;
-                    let title;
-                    let language;
-
-                    if (largeBlocks.length === 1) {
-                        // Single large block
-                        combinedContent = largeBlocks[0].content;
-                        title = `${largeBlocks[0].language} code (${largeBlocks[0].lines} lines)`;
-                        language = largeBlocks[0].language;
+                        });
                     } else {
-                        // Multiple large blocks - combine them with separators
-                        combinedContent = largeBlocks.map((block, idx) => {
-                            const separator = idx === 0 ? '' : `\n\n# ===== ${block.language.toUpperCase()} BLOCK ${idx + 1} =====\n\n`;
-                            return separator + block.content;
-                        }).join('');
-
-                        title = `Multiple code blocks (${largeBlocks.length} large blocks)`;
-                        language = largeBlocks[0].language; // Use first language for syntax highlighting
+                        // Create new artifact
+                        onArtifactCreate(artifact, messageIndex);
                     }
-
-                    const artifact = {
-                        id: `artifact-${Date.now()}`,
-                        type: 'code',
-                        title: title,
-                        language: language,
-                        content: combinedContent
-                    };
-                    setCreatedArtifact(artifact);
-                    onArtifactCreate(artifact);
-                    return;
-                }
+                });
             }
 
-            // Long content without code blocks
-            if (content.length > 800) {
-                const artifact = {
-                    id: `artifact-${Date.now()}`,
-                    type: 'document',
-                    title: 'Generated Content',
-                    language: 'markdown',
-                    content: content
-                };
-                setCreatedArtifact(artifact);
-                onArtifactCreate(artifact);
-            }
+            setProcessedContent(analysis.parts);
+        } else {
+            setProcessedContent([{ type: 'text', content }]);
         }
-    }, [content, role, onArtifactCreate, hasArtifact]);
+    }, [content, role, messageIndex, onArtifactCreate, artifactStore]);
 
-    const getLanguageFromExtension = (ext) => {
-        const languageMap = {
-            'js': 'javascript',
-            'jsx': 'javascript',
-            'ts': 'typescript',
-            'tsx': 'typescript',
-            'py': 'python',
-            'css': 'css',
-            'scss': 'scss',
-            'html': 'html',
-            'md': 'markdown',
-            'json': 'json',
-            'yaml': 'yaml',
-            'yml': 'yaml',
-            'sh': 'bash',
-            'bash': 'bash'
-        };
-        return languageMap[ext.toLowerCase()] || ext;
+    // Determine if we should create a new version vs new artifact
+    const shouldCreateNewVersion = (existingArtifact, newArtifact) => {
+        // Create new version if:
+        // 1. Same or similar language
+        // 2. Similar title/filename
+        // 3. Content has meaningful overlap but differences
+        // 4. Same type (file vs code vs document)
+
+        const languageMatch = existingArtifact.language === newArtifact.language;
+        const titleSimilarity = calculateTitleSimilarity(existingArtifact.title, newArtifact.title);
+        const typeMatch = existingArtifact.type === newArtifact.type;
+        const contentSimilarity = artifactStore?.calculateSimilarity(
+            existingArtifact.content,
+            newArtifact.content
+        ) || 0;
+
+        return languageMatch &&
+            titleSimilarity > 0.5 &&
+            typeMatch &&
+            contentSimilarity > 0.3 &&
+            contentSimilarity < 0.95; // Not identical, but similar
     };
 
-    const handleViewArtifact = () => {
-        if (createdArtifact) {
-            if (onArtifactView) {
-                onArtifactView(createdArtifact.id);
-            } else if (onArtifactCreate) {
-                onArtifactCreate(createdArtifact);
-            }
-        }
+    // Calculate title similarity
+    const calculateTitleSimilarity = (title1, title2) => {
+        const words1 = title1.toLowerCase().split(/\s+/);
+        const words2 = title2.toLowerCase().split(/\s+/);
+        const intersection = words1.filter(word => words2.includes(word));
+        const union = [...new Set([...words1, ...words2])];
+        return intersection.length / union.length;
     };
 
     if (role === 'user') {
@@ -553,7 +477,7 @@ export default function Message({ role, content, timestamp, onArtifactCreate, on
         );
     }
 
-    // AI messages - clean style
+    // AI messages with Claude-style artifact handling
     return (
         <div className="mb-6">
             <div className="flex items-start gap-3">
@@ -561,28 +485,24 @@ export default function Message({ role, content, timestamp, onArtifactCreate, on
                     AI
                 </div>
                 <div className="flex-1 pt-1 min-w-0">
-                    {parts.map((part, index) => (
+                    {processedContent?.map((part, index) => (
                         <div key={index}>
                             {part.type === 'code' ? (
                                 <CodeBlock
                                     code={part.content}
                                     language={part.language}
                                 />
-                            ) : part.type === 'artifact_reference' ? (
+                            ) : part.type === 'artifact_card' ? (
                                 <ArtifactCard
-                                    onViewArtifact={handleViewArtifact}
-                                    artifact={createdArtifact}
-                                />
-                            ) : part.type === 'artifact_reference_inline' ? (
-                                <ArtifactCard
-                                    onViewArtifact={handleViewArtifact}
-                                    artifact={createdArtifact}
+                                    artifact={part.artifact}
+                                    onViewArtifact={onArtifactView}
+                                    onUpdateArtifact={onArtifactUpdate}
                                 />
                             ) : part.content ? (
                                 <div
-                                    className="text-gray-900 leading-relaxed break-words"
+                                    className="text-gray-900 leading-relaxed break-words mb-2"
                                     dangerouslySetInnerHTML={{
-                                        __html: formatText(part.content)
+                                        __html: formatText(part.content.trim())
                                     }}
                                 />
                             ) : null}

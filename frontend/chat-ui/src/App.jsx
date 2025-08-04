@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from "react";
 import Message from "./components/Message";
 import ArtifactViewer from "./components/ArtifactViewer";
 import { sendMessage } from "./api/chat";
+import { artifactStore, useArtifactStore } from "./utils/artifactStore";
 
 export default function App() {
   const [project, setProject] = useState("");
@@ -11,91 +12,69 @@ export default function App() {
   const [loadingRepos, setLoadingRepos] = useState(true);
   const [attachedFiles, setAttachedFiles] = useState([]);
   const [currentArtifact, setCurrentArtifact] = useState(null);
-  const [artifactHistory, setArtifactHistory] = useState([]); // Keep track of all artifacts
-  const [artifactPanelWidth, setArtifactPanelWidth] = useState(50); // Percentage
+  const [artifactPanelWidth, setArtifactPanelWidth] = useState(50);
+  const [showArtifactHistory, setShowArtifactHistory] = useState(false);
 
   const textareaRef = useRef(null);
   const messagesEndRef = useRef(null);
-  const resizeRef = useRef(null);
   const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://localhost:8000";
 
-  // Artifact detection function
-  const detectArtifact = (content, messageIndex) => {
-    // Check for complete files
-    const fileHeaderRegex = /^(Here's a detailed .*?\.(\w+) file|Here's the .*?\.(\w+) file|Here's your .*?\.(\w+) file)/i;
-    const fileMatch = content.match(fileHeaderRegex);
+  // Use artifact store hook
+  const {
+    artifacts,
+    getArtifact,
+    getMessageArtifacts,
+    getArtifactVersions,
+    createArtifact,
+    updateArtifact
+  } = useArtifactStore();
 
-    if (fileMatch) {
-      const extension = fileMatch[2] || fileMatch[3] || fileMatch[4] || 'txt';
-      const filename = content.match(/([\w-]+\.\w+)/)?.[1] || `file.${extension}`;
+  // Handle artifact creation from messages
+  const handleArtifactCreate = (artifact, messageIndex) => {
+    // Check if this is similar to an existing artifact (potential update)
+    const similarArtifact = artifactStore.findSimilarArtifact(artifact.content, artifact.language, 0.7);
 
-      // Extract code content
-      const codeBlockMatch = content.match(/```[\w]*\n([\s\S]*?)```/);
-      if (codeBlockMatch) {
-        return {
-          id: `artifact-${messageIndex}`,
-          type: 'file',
-          title: filename,
-          language: getLanguageFromExtension(extension),
-          content: codeBlockMatch[1].trim(),
-          messageIndex
-        };
-      }
+    let createdArtifact;
+    if (similarArtifact && shouldCreateNewVersion(similarArtifact, artifact)) {
+      // Create new version
+      createdArtifact = createArtifact(artifact, messageIndex, similarArtifact.baseId);
+    } else {
+      // Create new artifact
+      createdArtifact = createArtifact(artifact, messageIndex);
     }
 
-    // Check for substantial code blocks (>20 lines)
-    const codeBlocks = content.match(/```(\w+)?\n([\s\S]*?)```/g);
-    if (codeBlocks) {
-      for (let i = 0; i < codeBlocks.length; i++) {
-        const block = codeBlocks[i];
-        const match = block.match(/```(\w+)?\n([\s\S]*?)```/);
-        if (match && match[2].split('\n').length > 20) {
-          const language = match[1] || 'text';
-          return {
-            id: `artifact-${messageIndex}-${i}`,
-            type: 'code',
-            title: `${language} code`,
-            language: language,
-            content: match[2].trim(),
-            messageIndex
-          };
-        }
-      }
+    // Auto-open if it's a significant update
+    if (createdArtifact && (artifact.content.length > 500 || createdArtifact.version > 1)) {
+      setCurrentArtifact(createdArtifact);
     }
 
-    // Check for long content that would benefit from artifact view
-    if (content.length > 2000 && content.includes('```')) {
-      return {
-        id: `artifact-${messageIndex}`,
-        type: 'document',
-        title: 'Generated Content',
-        language: 'markdown',
-        content: content,
-        messageIndex
-      };
-    }
-
-    return null;
+    return createdArtifact;
   };
 
-  const getLanguageFromExtension = (ext) => {
-    const languageMap = {
-      'js': 'javascript',
-      'jsx': 'javascript',
-      'ts': 'typescript',
-      'tsx': 'typescript',
-      'py': 'python',
-      'css': 'css',
-      'scss': 'scss',
-      'html': 'html',
-      'md': 'markdown',
-      'json': 'json',
-      'yaml': 'yaml',
-      'yml': 'yaml',
-      'sh': 'bash',
-      'bash': 'bash'
-    };
-    return languageMap[ext.toLowerCase()] || ext;
+  // Determine if we should create a new version vs new artifact
+  const shouldCreateNewVersion = (existingArtifact, newArtifact) => {
+    // Create new version if:
+    // 1. Same language
+    // 2. Similar title/purpose
+    // 3. Content is significantly different but related
+    return (
+      existingArtifact.language === newArtifact.language &&
+      (existingArtifact.title.toLowerCase().includes(newArtifact.title.toLowerCase()) ||
+        newArtifact.title.toLowerCase().includes(existingArtifact.title.toLowerCase()) ||
+        existingArtifact.content.length > 200) // Only version substantial artifacts
+    );
+  };
+
+  // Handle artifact viewing
+  const handleArtifactView = (artifact) => {
+    setCurrentArtifact(artifact);
+  };
+
+  // Handle artifact updates
+  const handleArtifactUpdate = (artifact) => {
+    // For now, just view the artifact
+    // Later you could add inline editing capability
+    setCurrentArtifact(artifact);
   };
 
   // Handle mouse down for resizing
@@ -108,7 +87,7 @@ export default function App() {
   const handleMouseMove = (e) => {
     const containerWidth = window.innerWidth;
     const newWidth = ((containerWidth - e.clientX) / containerWidth) * 100;
-    const clampedWidth = Math.min(Math.max(newWidth, 30), 70); // 30% to 70%
+    const clampedWidth = Math.min(Math.max(newWidth, 30), 70);
     setArtifactPanelWidth(clampedWidth);
   };
 
@@ -150,6 +129,33 @@ export default function App() {
     loadRepositories();
   }, []);
 
+  // Persist artifact store to localStorage
+  useEffect(() => {
+    const saveArtifacts = () => {
+      try {
+        const data = artifactStore.export();
+        localStorage.setItem('coding-assistant-artifacts', JSON.stringify(data));
+      } catch (error) {
+        console.warn('Failed to save artifacts to localStorage:', error);
+      }
+    };
+
+    // Load artifacts on startup
+    try {
+      const saved = localStorage.getItem('coding-assistant-artifacts');
+      if (saved) {
+        const data = JSON.parse(saved);
+        artifactStore.import(data);
+      }
+    } catch (error) {
+      console.warn('Failed to load artifacts from localStorage:', error);
+    }
+
+    // Save artifacts when they change
+    const unsubscribe = artifactStore.subscribe(saveArtifacts);
+    return unsubscribe;
+  }, []);
+
   const getTimestamp = () =>
     new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 
@@ -164,10 +170,8 @@ export default function App() {
           return;
         }
 
-        // Handle files in root directory or with repo prefix
         let finalFilePath = filePath;
         if (!filePath.includes('/') && project) {
-          // File in root of current project
           finalFilePath = `${project}/${filePath}`;
         } else if (!filePath.includes('/')) {
           setMessages([...messages, { role: "system", content: `❌ Please specify a repository name or select a current project. Usage: /attach-file [repo]/[file_path]\nExample: /attach-file Trading-Bot/main.py` }]);
@@ -212,6 +216,21 @@ export default function App() {
       } else if (command === "/clear-attachments") {
         setAttachedFiles([]);
         setMessages([...messages, { role: "system", content: `🗑️ Cleared all attached files.` }]);
+      } else if (command === "/clear-artifacts") {
+        artifactStore.clear();
+        setCurrentArtifact(null);
+        setMessages([...messages, { role: "system", content: `🗑️ Cleared all artifacts and version history.` }]);
+      } else if (command === "/list-artifacts") {
+        const allArtifacts = artifacts;
+        if (allArtifacts.length === 0) {
+          setMessages([...messages, { role: "system", content: `📄 No artifacts created yet.` }]);
+        } else {
+          const artifactList = allArtifacts
+            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+            .map((artifact, idx) => `${idx + 1}. ${artifact.title} (${artifact.language}, v${artifact.version})`)
+            .join('\n');
+          setMessages([...messages, { role: "system", content: `📄 **Created Artifacts (${allArtifacts.length}):**\n${artifactList}` }]);
+        }
       } else if (command.startsWith("/remove-attachment")) {
         const [, indexStr] = command.split(" ");
         const index = parseInt(indexStr) - 1;
@@ -247,7 +266,6 @@ export default function App() {
               content: formattedTree
             }]);
           } else if (data.files) {
-            // Fallback to list format
             const fileList = data.files.join("\n");
             setMessages([...messages, { role: "system", content: `Files in ${targetRepo}:\n${fileList}` }]);
           }
@@ -440,6 +458,10 @@ export default function App() {
 • \`/remove-attachment [number]\` - Remove specific attachment
 • \`/clear-attachments\` - Remove all attachments
 
+**Artifact Management:**
+• \`/list-artifacts\` - Show all created artifacts
+• \`/clear-artifacts\` - Clear all artifacts and history
+
 **Repository Management:**
 • \`/refresh-repos\` - Refresh repository list
 • \`/reindex [repo]\` - Reindex specific repository
@@ -451,12 +473,11 @@ export default function App() {
 
 **Important:** Run \`/reindex-all\` first after deployment to clone repositories.
 
-**Workflow Example:**
-1. \`/reindex-all\` (first time setup)
-2. \`/list-files Trading-Bot\`
-3. \`/attach-file Trading-Bot/main.py\`
-4. \`/attach-file Trading-Bot/src/utils.py\`
-5. Ask your question - attached files will be included as context`;
+**Artifact System:**
+- Small code blocks (≤10 lines) stay in chat
+- Large code blocks (>10 lines) become artifacts with versioning
+- Click artifact cards to view in side panel
+- Artifacts persist across sessions with full version history`;
 
         setMessages([...messages, { role: "system", content: helpText }]);
       } else {
@@ -485,19 +506,6 @@ export default function App() {
   // Auto-scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
-
-  // Detect artifacts when messages change
-  useEffect(() => {
-    if (messages.length > 0) {
-      const lastMessage = messages[messages.length - 1];
-      if (lastMessage.role === 'assistant') {
-        const artifact = detectArtifact(lastMessage.content, messages.length - 1);
-        if (artifact) {
-          setCurrentArtifact(artifact);
-        }
-      }
-    }
   }, [messages]);
 
   const handleSubmit = async (e) => {
@@ -618,6 +626,12 @@ export default function App() {
             >
               🔄 Reindex All
             </button>
+            <button
+              onClick={() => setInput('/list-artifacts')}
+              className="px-5 py-2.5 bg-white hover:bg-gray-50 rounded-lg text-gray-700 transition-colors border border-gray-300 font-medium text-base shadow-sm"
+            >
+              📄 Artifacts ({artifacts.length})
+            </button>
           </div>
 
           {/* Attached Files Counter */}
@@ -696,17 +710,11 @@ export default function App() {
                     role={msg.role}
                     content={msg.content}
                     timestamp={msg.timestamp}
-                    onArtifactCreate={(artifact) => {
-                      const artifactWithIndex = { ...artifact, messageIndex: idx };
-                      setCurrentArtifact(artifactWithIndex);
-                      setArtifactHistory(prev => [...prev, artifactWithIndex]);
-                    }}
-                    onArtifactView={(artifactId) => {
-                      const artifact = artifactHistory.find(a => a.id === artifactId);
-                      if (artifact) {
-                        setCurrentArtifact(artifact);
-                      }
-                    }}
+                    messageIndex={idx}
+                    artifactStore={artifactStore}
+                    onArtifactCreate={handleArtifactCreate}
+                    onArtifactView={handleArtifactView}
+                    onArtifactUpdate={handleArtifactUpdate}
                   />
                 ))
               )}
@@ -770,6 +778,8 @@ export default function App() {
             <ArtifactViewer
               artifact={currentArtifact}
               onClose={() => setCurrentArtifact(null)}
+              onVersionSelect={(version) => setCurrentArtifact(version)}
+              artifactVersions={getArtifactVersions(currentArtifact.baseId)}
             />
           </div>
         )}

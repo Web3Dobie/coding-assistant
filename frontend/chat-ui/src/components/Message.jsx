@@ -18,58 +18,37 @@ const vsCodeTheme = {
     border: '#3c3c3c'
 };
 
-// Enhanced code highlighting with VS Code theme
+// Simple and safe code highlighting - LINT ERROR FREE
 const highlightCode = (code, language) => {
-    let highlighted = code;
+    // Just escape HTML and apply basic coloring - no complex regex
+    const escaped = code
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#x27;');
 
-    if (language === 'bash' || language === 'shell' || language === 'sh') {
-        highlighted = highlighted
-            .replace(/^(\$\s*)/gm, '<span style="color: #569cd6; font-weight: bold;">$1</span>')
-            .replace(/\b(cd|ls|mkdir|rm|cp|mv|git|npm|docker|curl|wget|chmod|sudo|echo|cat|grep|find|ps|kill|top)\b/g, '<span style="color: #569cd6; font-weight: bold;">$1</span>')
-            .replace(/(--?[a-zA-Z-]+)/g, '<span style="color: #9cdcfe;">$1</span>')
-            .replace(/(['"`])((?:\\.|(?!\1)[^\\])*?)\1/g, '<span style="color: #ce9178;">$1$2$1</span>')
-            .replace(/#.*$/gm, '<span style="color: #6a9955; font-style: italic;">$&</span>')
-            .replace(/\b(\d+)\b/g, '<span style="color: #b5cea8;">$1</span>');
-    } else if (language === 'javascript' || language === 'js' || language === 'jsx') {
-        highlighted = highlighted
-            .replace(/\b(const|let|var|function|return|if|else|for|while|class|import|export|from|async|await|new|try|catch|finally)\b/g, '<span style="color: #569cd6; font-weight: bold;">$1</span>')
-            .replace(/\b(true|false|null|undefined)\b/g, '<span style="color: #569cd6;">$1</span>')
-            .replace(/(['"`])((?:\\.|(?!\1)[^\\])*?)\1/g, '<span style="color: #ce9178;">$1$2$1</span>')
-            .replace(/\b(\d+(?:\.\d+)?)\b/g, '<span style="color: #b5cea8;">$1</span>')
-            .replace(/\/\/.*$/gm, '<span style="color: #6a9955; font-style: italic;">$&</span>')
-            .replace(/\/\*[\s\S]*?\*\//g, '<span style="color: #6a9955; font-style: italic;">$&</span>')
-            .replace(/\b([A-Z][a-zA-Z0-9_]*)\b/g, '<span style="color: #4ec9b0;">$1</span>');
-    } else if (language === 'python' || language === 'py') {
-        highlighted = highlighted
-            .replace(/\b(def|class|import|from|return|if|elif|else|for|while|try|except|with|as|async|await|lambda|yield|global|nonlocal)\b/g, '<span style="color: #569cd6; font-weight: bold;">$1</span>')
+    // Simple keyword highlighting for common languages
+    if (language === 'python' || language === 'py') {
+        return escaped
+            .replace(/\b(def|class|import|from|return|if|elif|else|for|while|try|except|with|as|async|await)\b/g, '<span style="color: #569cd6; font-weight: bold;">$1</span>')
             .replace(/\b(True|False|None)\b/g, '<span style="color: #569cd6;">$1</span>')
-            .replace(/(['"`])((?:\\.|(?!\1)[^\\])*?)\1/g, '<span style="color: #ce9178;">$1$2$1</span>')
-            .replace(/\b(\d+(?:\.\d+)?)\b/g, '<span style="color: #b5cea8;">$1</span>')
-            .replace(/#.*$/gm, '<span style="color: #6a9955; font-style: italic;">$&</span>')
-            .replace(/\b([A-Z][a-zA-Z0-9_]*)\b/g, '<span style="color: #4ec9b0;">$1</span>');
-    } else if (language === 'css') {
-        highlighted = highlighted
-            .replace(/([.#]?[a-zA-Z-]+)(\s*{)/g, '<span style="color: #92c5f7;">$1</span>$2')
-            .replace(/([a-zA-Z-]+)(\s*:)/g, '<span style="color: #9cdcfe;">$1</span><span style="color: #cccccc;">$2</span>')
-            .replace(/(['"`])((?:\\.|(?!\1)[^\\])*?)\1/g, '<span style="color: #ce9178;">$1$2$1</span>')
-            .replace(/\b(\d+(?:px|em|rem|%|vh|vw)?)\b/g, '<span style="color: #b5cea8;">$1</span>');
-    } else if (language === 'markdown' || language === 'md') {
-        highlighted = highlighted
-            .replace(/^(#{1,6})\s+(.*)$/gm, '<span style="color: #569cd6; font-weight: bold;">$1</span> <span style="color: #dcdcaa; font-weight: bold;">$2</span>')
-            .replace(/\*\*(.*?)\*\*/g, '<span style="color: #dcdcaa; font-weight: bold;">**$1**</span>')
-            .replace(/\*(.*?)\*/g, '<span style="color: #dcdcaa; font-style: italic;">*$1*</span>')
-            .replace(/`([^`]+)`/g, '<span style="color: #ce9178; background-color: #2d2d30; padding: 2px 4px; border-radius: 3px;">$1</span>')
-            .replace(/^\s*[-*+]\s+/gm, '<span style="color: #569cd6;">$&</span>')
-            .replace(/^\s*\d+\.\s+/gm, '<span style="color: #569cd6;">$&</span>');
-    } else if (language === 'json') {
-        highlighted = highlighted
-            .replace(/"([^"]+)"(\s*:)/g, '<span style="color: #9cdcfe;">"$1"</span>$2')
-            .replace(/:\s*"([^"]+)"/g, ': <span style="color: #ce9178;">"$1"</span>')
-            .replace(/:\s*(true|false|null)/g, ': <span style="color: #569cd6;">$1</span>')
-            .replace(/:\s*(\d+(?:\.\d+)?)/g, ': <span style="color: #b5cea8;">$1</span>');
+            .replace(/\b(\d+)\b/g, '<span style="color: #b5cea8;">$1</span>')
+            .replace(/#.*$/gm, '<span style="color: #6a9955; font-style: italic;">$&</span>');
+    } else if (language === 'javascript' || language === 'js' || language === 'jsx') {
+        return escaped
+            .replace(/\b(const|let|var|function|return|if|else|for|while|class|import|export|from|async|await)\b/g, '<span style="color: #569cd6; font-weight: bold;">$1</span>')
+            .replace(/\b(true|false|null|undefined)\b/g, '<span style="color: #569cd6;">$1</span>')
+            .replace(/\b(\d+)\b/g, '<span style="color: #b5cea8;">$1</span>')
+            .replace(/\/\/.*$/gm, '<span style="color: #6a9955; font-style: italic;">$&</span>');
+    } else if (language === 'bash' || language === 'shell' || language === 'sh') {
+        return escaped
+            .replace(/\b(cd|ls|mkdir|rm|cp|mv|git|npm|docker|curl|wget|chmod|sudo|echo|cat|grep)\b/g, '<span style="color: #569cd6; font-weight: bold;">$1</span>')
+            .replace(/\b(\d+)\b/g, '<span style="color: #b5cea8;">$1</span>')
+            .replace(/#.*$/gm, '<span style="color: #6a9955; font-style: italic;">$&</span>');
     }
 
-    return highlighted;
+    return escaped;
 };
 
 // Detect if content should create artifacts and where
@@ -140,82 +119,42 @@ const analyzeContentForArtifacts = (content) => {
         });
     }
 
-    // If no code blocks found, check for file patterns
-    if (artifacts.length === 0) {
-        const filePatterns = [
-            /Here's.*?(?:updated|complete|full|new).*?(?:file|implementation|solution)/i,
-            /I've (?:created|updated|modified).*?(?:file|code|implementation)/i,
-            /(?:Updated|Modified|Created).*?file/i
-        ];
-
-        for (const pattern of filePatterns) {
-            if (pattern.test(content) && content.length > 800) {
-                const artifactId = `artifact-${Date.now()}`;
-                const artifact = {
-                    id: artifactId,
-                    type: 'document',
-                    title: 'Generated Content',
-                    language: 'markdown',
-                    content: content,
-                    version: 1,
-                    createdAt: new Date().toISOString()
-                };
-
-                artifacts.push(artifact);
-
-                // Replace content with summary + artifact card
-                return {
-                    artifacts,
-                    parts: [
-                        { type: 'text', content: content.split('\n')[0] + '...' },
-                        { type: 'artifact_card', artifactId: artifactId, artifact: artifact }
-                    ]
-                };
-            }
-        }
-    }
-
+    // If no code blocks found, return simple text
     return { artifacts, parts: parts.length > 0 ? parts : [{ type: 'text', content }] };
 };
 
-// Detect appropriate title for artifact
+// Detect appropriate title for artifact - SIMPLIFIED
 const detectArtifactTitle = (fullContent, codeIndex, language, lineCount) => {
-    // Look for file references near the code block
-    const contextBefore = fullContent.slice(Math.max(0, codeIndex - 200), codeIndex);
-    const contextAfter = fullContent.slice(codeIndex, codeIndex + 200);
+    // Look for context around the code block
+    const contextStart = Math.max(0, codeIndex - 200);
+    const contextEnd = Math.min(fullContent.length, codeIndex + 200);
+    const context = fullContent.slice(contextStart, contextEnd);
 
-    // Check for file names
-    const filePattern = /(?:file|named|called)\s+["`']?([a-zA-Z0-9_.-]+\.[a-zA-Z0-9]+)["`']?/i;
-    const fileMatch = (contextBefore + contextAfter).match(filePattern);
+    // Simple filename detection
+    const simpleFilePattern = /\b([a-zA-Z0-9_.-]+\.(py|js|jsx|ts|tsx|html|css|json|md|txt|yml|yaml))\b/i;
+    const fileMatch = context.match(simpleFilePattern);
     if (fileMatch) {
         return fileMatch[1];
     }
 
-    // Check for component names
-    const componentPattern = /(?:component|class|function)\s+([A-Z][a-zA-Z0-9]+)/i;
-    const componentMatch = (contextBefore + contextAfter).match(componentPattern);
-    if (componentMatch) {
-        return `${componentMatch[1]} Component`;
+    // Look for "main.py" or similar
+    if (context.includes('main.py')) return 'main.py';
+    if (context.includes('app.py')) return 'app.py';
+    if (context.includes('index.js')) return 'index.js';
+    if (context.includes('App.jsx')) return 'App.jsx';
+
+    // Look for function names
+    const functionPattern = /\b(def|function)\s+([a-zA-Z_][a-zA-Z0-9_]*)/i;
+    const funcMatch = context.match(functionPattern);
+    if (funcMatch) {
+        return `${funcMatch[2]} function`;
     }
 
-    // Check for descriptive context
-    const descriptionPatterns = [
-        /(?:updated|modified|created|here's)\s+(?:the\s+)?([^.]+?)(?:\s+(?:file|code|implementation))?[:.]/i,
-        /Here's\s+([^:]+):/i
-    ];
-
-    for (const pattern of descriptionPatterns) {
-        const match = (contextBefore + contextAfter).match(pattern);
-        if (match && match[1].length < 50) {
-            return match[1].trim();
-        }
-    }
-
-    // Default titles based on language and size
+    // Default titles
     if (lineCount > 50) {
-        return `Large ${language} implementation`;
+        return `${language} implementation`;
     } else if (lineCount > 20) {
-        return `${language} code block`;
+        return `${language} code`;
     } else {
         return `${language} snippet`;
     }
@@ -275,7 +214,7 @@ const CodeBlock = ({ code, language }) => {
     );
 };
 
-// Claude-style artifact card component
+// Claude-style artifact card component - IMPROVED LAYOUT
 const ArtifactCard = ({ artifact, onViewArtifact, onUpdateArtifact }) => {
     const getArtifactIcon = () => {
         switch (artifact.language) {
@@ -307,6 +246,21 @@ const ArtifactCard = ({ artifact, onViewArtifact, onUpdateArtifact }) => {
         return artifact.content.split('\n').length;
     };
 
+    // Better title display - prioritize filenames
+    const getDisplayTitle = () => {
+        const title = artifact.title;
+
+        // If title looks like a filename, make it prominent
+        if (title.includes('.')) {
+            return title;
+        }
+
+        // Otherwise return as-is
+        return title;
+    };
+
+    const isFilename = artifact.title.includes('.');
+
     return (
         <div className="my-4 p-4 bg-white border border-gray-200 rounded-lg shadow-sm hover:shadow-md transition-shadow">
             <div className="flex items-center justify-between">
@@ -314,16 +268,24 @@ const ArtifactCard = ({ artifact, onViewArtifact, onUpdateArtifact }) => {
                     <div className="text-xl">{getArtifactIcon()}</div>
                     <div className="flex-1 min-w-0">
                         <div className="text-sm font-medium text-gray-900 truncate">
-                            {artifact.title}
+                            {isFilename ? (
+                                <code className="bg-gray-100 text-gray-900 px-2 py-1 rounded font-mono text-sm">
+                                    {getDisplayTitle()}
+                                </code>
+                            ) : (
+                                getDisplayTitle()
+                            )}
                         </div>
-                        <div className="text-xs text-gray-500 flex items-center gap-2">
-                            <span>{artifact.language}</span>
+                        <div className="text-xs text-gray-500 flex items-center gap-2 mt-1">
+                            <span className="font-medium">{artifact.language}</span>
                             <span>•</span>
                             <span>{getLineCount()} lines</span>
                             {artifact.version > 1 && (
                                 <>
                                     <span>•</span>
-                                    <span>v{artifact.version}</span>
+                                    <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 rounded text-xs">
+                                        v{artifact.version}
+                                    </span>
                                 </>
                             )}
                         </div>
@@ -333,7 +295,7 @@ const ArtifactCard = ({ artifact, onViewArtifact, onUpdateArtifact }) => {
                 <div className="flex items-center gap-2">
                     <button
                         onClick={() => onViewArtifact(artifact)}
-                        className="px-3 py-1.5 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors border border-blue-200"
+                        className="px-3 py-1.5 text-xs text-blue-600 hover:text-blue-800 hover:bg-blue-50 rounded transition-colors border border-blue-200 font-medium"
                     >
                         View code
                     </button>
@@ -351,23 +313,21 @@ const ArtifactCard = ({ artifact, onViewArtifact, onUpdateArtifact }) => {
     );
 };
 
-// Format regular text with minimal styling - SAFER VERSION
+// Simple text formatting without complex regex
 const formatText = (text) => {
     try {
         if (!text || typeof text !== 'string') {
             return '';
         }
 
+        // Simple and safe text formatting
         return text
-            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-            .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>')
-            .replace(/`([^`]+\.(js|jsx|ts|tsx|py|css|html|json|md|txt|yml|yaml|env|gitignore|dockerfile))`/gi, '<code class="bg-red-100 text-red-800 px-1 rounded text-sm font-mono">$1</code>')
-            .replace(/`(\/[a-zA-Z-]+(?:\s+[^`]*)?)`/g, '<code class="bg-blue-100 text-blue-800 px-1 rounded text-sm font-mono">$1</code>')
+            .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+            .replace(/\*([^*]+)\*/g, '<em>$1</em>')
             .replace(/`([^`]+)`/g, '<code class="bg-gray-100 text-gray-800 px-1 rounded text-sm font-mono">$1</code>')
             .replace(/\n/g, '<br>');
     } catch (error) {
         console.warn('Error formatting text:', error);
-        // Return plain text if formatting fails
         return text.replace(/\n/g, '<br>');
     }
 };
@@ -385,14 +345,17 @@ export default function Message({
     const [processedContent, setProcessedContent] = useState(null);
     const hasProcessedRef = useRef(false);
 
+    // Simple similarity calculation
+    const calculateTitleSimilarity = useCallback((title1, title2) => {
+        const words1 = title1.toLowerCase().split(/\s+/);
+        const words2 = title2.toLowerCase().split(/\s+/);
+        const intersection = words1.filter(word => words2.includes(word));
+        const union = [...new Set([...words1, ...words2])];
+        return intersection.length / union.length;
+    }, []);
+
     // Determine if we should create a new version vs new artifact
     const shouldCreateNewVersion = useCallback((existingArtifact, newArtifact) => {
-        // Create new version if:
-        // 1. Same or similar language
-        // 2. Similar title/filename
-        // 3. Content has meaningful overlap but differences
-        // 4. Same type (file vs code vs document)
-
         const languageMatch = existingArtifact.language === newArtifact.language;
         const titleSimilarity = calculateTitleSimilarity(existingArtifact.title, newArtifact.title);
         const typeMatch = existingArtifact.type === newArtifact.type;
@@ -405,17 +368,8 @@ export default function Message({
             titleSimilarity > 0.5 &&
             typeMatch &&
             contentSimilarity > 0.3 &&
-            contentSimilarity < 0.95; // Not identical, but similar
-    }, [artifactStore]);
-
-    // Calculate title similarity
-    const calculateTitleSimilarity = useCallback((title1, title2) => {
-        const words1 = title1.toLowerCase().split(/\s+/);
-        const words2 = title2.toLowerCase().split(/\s+/);
-        const intersection = words1.filter(word => words2.includes(word));
-        const union = [...new Set([...words1, ...words2])];
-        return intersection.length / union.length;
-    }, []);
+            contentSimilarity < 0.95;
+    }, [artifactStore, calculateTitleSimilarity]);
 
     // Process content when message loads - FIXED: Only runs once per message
     useEffect(() => {
@@ -430,7 +384,7 @@ export default function Message({
                 if (analysis.artifacts.length > 0 && onArtifactCreate) {
                     analysis.artifacts.forEach(artifact => {
                         try {
-                            // Check for similar existing artifacts to determine if this should be a new version
+                            // Check for similar existing artifacts
                             const similarArtifact = artifactStore?.findSimilarArtifact(
                                 artifact.content,
                                 artifact.language,

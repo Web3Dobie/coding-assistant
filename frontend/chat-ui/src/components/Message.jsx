@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 
 // VS Code Dark Theme Colors
 const vsCodeTheme = {
@@ -351,15 +351,25 @@ const ArtifactCard = ({ artifact, onViewArtifact, onUpdateArtifact }) => {
     );
 };
 
-// Format regular text with minimal styling
+// Format regular text with minimal styling - SAFER VERSION
 const formatText = (text) => {
-    return text
-        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-        .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>')
-        .replace(/`([^`]+\.(js|jsx|ts|tsx|py|css|html|json|md|txt|yml|yaml|env|gitignore|dockerfile))`/gi, '<code class="bg-red-100 text-red-800 px-1 rounded text-sm font-mono">$1</code>')
-        .replace(/`(\/[a-zA-Z-]+(?:\s+[^`]*)?)`/g, '<code class="bg-blue-100 text-blue-800 px-1 rounded text-sm font-mono">$1</code>')
-        .replace(/`([^`]+)`/g, '<code class="bg-gray-100 text-gray-800 px-1 rounded text-sm font-mono">$1</code>')
-        .replace(/\n/g, '<br>');
+    try {
+        if (!text || typeof text !== 'string') {
+            return '';
+        }
+
+        return text
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/(?<!\*)\*([^*]+)\*(?!\*)/g, '<em>$1</em>')
+            .replace(/`([^`]+\.(js|jsx|ts|tsx|py|css|html|json|md|txt|yml|yaml|env|gitignore|dockerfile))`/gi, '<code class="bg-red-100 text-red-800 px-1 rounded text-sm font-mono">$1</code>')
+            .replace(/`(\/[a-zA-Z-]+(?:\s+[^`]*)?)`/g, '<code class="bg-blue-100 text-blue-800 px-1 rounded text-sm font-mono">$1</code>')
+            .replace(/`([^`]+)`/g, '<code class="bg-gray-100 text-gray-800 px-1 rounded text-sm font-mono">$1</code>')
+            .replace(/\n/g, '<br>');
+    } catch (error) {
+        console.warn('Error formatting text:', error);
+        // Return plain text if formatting fails
+        return text.replace(/\n/g, '<br>');
+    }
 };
 
 export default function Message({
@@ -375,49 +385,8 @@ export default function Message({
     const [processedContent, setProcessedContent] = useState(null);
     const hasProcessedRef = useRef(false);
 
-    // Process content when message loads or updates
-    useEffect(() => {
-        if (role === 'assistant' && !hasProcessedRef.current) {
-            hasProcessedRef.current = true;
-
-            const analysis = analyzeContentForArtifacts(content);
-
-            // Store any new artifacts with intelligent versioning
-            if (analysis.artifacts.length > 0 && onArtifactCreate) {
-                analysis.artifacts.forEach(artifact => {
-                    // Check for similar existing artifacts to determine if this should be a new version
-                    const similarArtifact = artifactStore?.findSimilarArtifact(
-                        artifact.content,
-                        artifact.language,
-                        0.6
-                    );
-
-                    if (similarArtifact && shouldCreateNewVersion(similarArtifact, artifact)) {
-                        // Create new version of existing artifact
-                        const newVersion = onArtifactCreate(artifact, messageIndex, similarArtifact.baseId);
-
-                        // Update the artifact reference in parts
-                        analysis.parts.forEach(part => {
-                            if (part.type === 'artifact_card' && part.artifactId === artifact.id) {
-                                part.artifact = newVersion;
-                                part.artifactId = newVersion.id;
-                            }
-                        });
-                    } else {
-                        // Create new artifact
-                        onArtifactCreate(artifact, messageIndex);
-                    }
-                });
-            }
-
-            setProcessedContent(analysis.parts);
-        } else if (role !== 'assistant') {
-            setProcessedContent([{ type: 'text', content }]);
-        }
-    }, [content, role, messageIndex]);
-
     // Determine if we should create a new version vs new artifact
-    const shouldCreateNewVersion = (existingArtifact, newArtifact) => {
+    const shouldCreateNewVersion = useCallback((existingArtifact, newArtifact) => {
         // Create new version if:
         // 1. Same or similar language
         // 2. Similar title/filename
@@ -437,16 +406,71 @@ export default function Message({
             typeMatch &&
             contentSimilarity > 0.3 &&
             contentSimilarity < 0.95; // Not identical, but similar
-    };
+    }, [artifactStore]);
 
     // Calculate title similarity
-    const calculateTitleSimilarity = (title1, title2) => {
+    const calculateTitleSimilarity = useCallback((title1, title2) => {
         const words1 = title1.toLowerCase().split(/\s+/);
         const words2 = title2.toLowerCase().split(/\s+/);
         const intersection = words1.filter(word => words2.includes(word));
         const union = [...new Set([...words1, ...words2])];
         return intersection.length / union.length;
-    };
+    }, []);
+
+    // Process content when message loads - FIXED: Only runs once per message
+    useEffect(() => {
+        try {
+            // Only process assistant messages and only if not already processed
+            if (role === 'assistant' && !hasProcessedRef.current) {
+                hasProcessedRef.current = true;
+
+                const analysis = analyzeContentForArtifacts(content);
+
+                // Store any new artifacts with intelligent versioning
+                if (analysis.artifacts.length > 0 && onArtifactCreate) {
+                    analysis.artifacts.forEach(artifact => {
+                        try {
+                            // Check for similar existing artifacts to determine if this should be a new version
+                            const similarArtifact = artifactStore?.findSimilarArtifact(
+                                artifact.content,
+                                artifact.language,
+                                0.6
+                            );
+
+                            if (similarArtifact && shouldCreateNewVersion(similarArtifact, artifact)) {
+                                // Create new version of existing artifact
+                                const newVersion = onArtifactCreate(artifact, messageIndex, similarArtifact.baseId);
+
+                                // Update the artifact reference in parts
+                                if (newVersion) {
+                                    analysis.parts.forEach(part => {
+                                        if (part.type === 'artifact_card' && part.artifactId === artifact.id) {
+                                            part.artifact = newVersion;
+                                            part.artifactId = newVersion.id;
+                                        }
+                                    });
+                                }
+                            } else {
+                                // Create new artifact
+                                onArtifactCreate(artifact, messageIndex);
+                            }
+                        } catch (artifactError) {
+                            console.warn('Error processing artifact:', artifactError);
+                        }
+                    });
+                }
+
+                setProcessedContent(analysis.parts);
+            } else if (role !== 'assistant') {
+                // For user and system messages, just set text content
+                setProcessedContent([{ type: 'text', content }]);
+            }
+        } catch (error) {
+            console.error('Error processing message content:', error);
+            // Fallback to simple text display
+            setProcessedContent([{ type: 'text', content }]);
+        }
+    }, [content, role, messageIndex]); // FIXED: Removed callback dependencies that cause infinite loops
 
     if (role === 'user') {
         return (
@@ -488,29 +512,39 @@ export default function Message({
                     AI
                 </div>
                 <div className="flex-1 pt-1 min-w-0">
-                    {processedContent?.map((part, index) => (
-                        <div key={index}>
-                            {part.type === 'code' ? (
-                                <CodeBlock
-                                    code={part.content}
-                                    language={part.language}
-                                />
-                            ) : part.type === 'artifact_card' ? (
-                                <ArtifactCard
-                                    artifact={part.artifact}
-                                    onViewArtifact={onArtifactView}
-                                    onUpdateArtifact={onArtifactUpdate}
-                                />
-                            ) : part.content ? (
-                                <div
-                                    className="text-gray-900 leading-relaxed break-words mb-2"
-                                    dangerouslySetInnerHTML={{
-                                        __html: formatText(part.content.trim())
-                                    }}
-                                />
-                            ) : null}
-                        </div>
-                    ))}
+                    {processedContent && processedContent.length > 0 ? (
+                        processedContent.map((part, index) => (
+                            <div key={index}>
+                                {part.type === 'code' ? (
+                                    <CodeBlock
+                                        code={part.content}
+                                        language={part.language}
+                                    />
+                                ) : part.type === 'artifact_card' ? (
+                                    <ArtifactCard
+                                        artifact={part.artifact}
+                                        onViewArtifact={onArtifactView}
+                                        onUpdateArtifact={onArtifactUpdate}
+                                    />
+                                ) : part.content ? (
+                                    <div
+                                        className="text-gray-900 leading-relaxed break-words mb-2"
+                                        dangerouslySetInnerHTML={{
+                                            __html: formatText(part.content.trim())
+                                        }}
+                                    />
+                                ) : null}
+                            </div>
+                        ))
+                    ) : (
+                        // Fallback display if processedContent is null/empty
+                        <div
+                            className="text-gray-900 leading-relaxed break-words mb-2"
+                            dangerouslySetInnerHTML={{
+                                __html: formatText(content)
+                            }}
+                        />
+                    )}
                     {timestamp && (
                         <div className="text-xs text-gray-400 mt-3">{timestamp}</div>
                     )}

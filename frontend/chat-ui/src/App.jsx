@@ -254,12 +254,18 @@ Currently attached files: ${attachedFiles.length > 0 ? attachedFiles.map(f => f.
       createdArtifact = createArtifact(artifact, messageIndex);
     }
 
+    // Add repository context to artifact
+    if (createdArtifact && project) {
+      createdArtifact.repository = project;
+      artifactStore.updateArtifact(createdArtifact.id, { repository: project });
+    }
+
     if (createdArtifact && (artifact.content.length > 500 || createdArtifact.version > 1)) {
       setCurrentArtifact(createdArtifact);
     }
 
     return createdArtifact;
-  }, [createArtifact]);
+  }, [createArtifact, project]);
 
   // Determine if we should create a new version vs new artifact
   const shouldCreateNewVersion = (existingArtifact, newArtifact) => {
@@ -421,23 +427,39 @@ Currently attached files: ${attachedFiles.length > 0 ? attachedFiles.map(f => f.
         setAttachedFiles([]);
         setMessages([...messages, { role: "system", content: `🗑️ Cleared all attached files.` }]);
       } else if (command === "/clear-artifacts") {
-        artifactStore.clear();
-        setCurrentArtifact(null);
-        setMessages([...messages, { role: "system", content: `🗑️ Cleared all artifacts and version history.` }]);
+        if (project) {
+          // Clear only artifacts for current repository
+          const currentRepoArtifacts = artifacts.filter(a => a.repository === project);
+          currentRepoArtifacts.forEach(artifact => {
+            artifactStore.deleteArtifact(artifact.id);
+          });
+          setCurrentArtifact(null);
+          setMessages([...messages, { role: "system", content: `🗑️ Cleared all artifacts for ${project} repository.` }]);
+        } else {
+          // Clear all artifacts if no repository selected
+          artifactStore.clear();
+          setCurrentArtifact(null);
+          setMessages([...messages, { role: "system", content: `🗑️ Cleared all artifacts and version history.` }]);
+        }
       } else if (command === "/list-artifacts") {
-        // UPDATED: Create clickable artifact cards instead of text list
-        const allArtifacts = artifacts;
-        if (allArtifacts.length === 0) {
+        // Filter artifacts by current repository
+        const filteredArtifacts = project
+          ? artifacts.filter(a => a.repository === project)
+          : artifacts;
+
+        if (filteredArtifacts.length === 0) {
+          const repoText = project ? ` for ${project}` : '';
           setMessages([...messages, {
             role: "system",
-            content: `📄 No artifacts created yet.`
+            content: `📄 No artifacts created yet${repoText}.`
           }]);
         } else {
           // Create a special message that renders clickable artifact cards
+          const repoText = project ? ` for ${project}` : '';
           const artifactListMessage = {
             role: "artifact_list",
-            content: `📄 **Created Artifacts (${allArtifacts.length}):**`,
-            artifacts: allArtifacts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
+            content: `📄 **Created Artifacts${repoText} (${filteredArtifacts.length}):**`,
+            artifacts: filteredArtifacts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
             timestamp: getTimestamp()
           };
           setMessages([...messages, artifactListMessage]);
@@ -674,8 +696,8 @@ Currently attached files: ${attachedFiles.length > 0 ? attachedFiles.map(f => f.
 • When enabled, AI can see all files and auto-load them as needed
 
 **Artifact Management:**
-• \`/list-artifacts\` - Show all created artifacts (clickable!)
-• \`/clear-artifacts\` - Clear all artifacts and history
+• \`/list-artifacts\` - Show all created artifacts for current repository (clickable!)
+• \`/clear-artifacts\` - Clear all artifacts for current repository
 
 **Repository Management:**
 • \`/refresh-repos\` - Refresh repository list
@@ -866,7 +888,7 @@ Currently attached files: ${attachedFiles.length > 0 ? attachedFiles.map(f => f.
               onClick={() => setInput('/list-artifacts')}
               className="px-5 py-2.5 bg-white hover:bg-gray-50 rounded-lg text-gray-700 transition-colors border border-gray-300 font-medium text-base shadow-sm"
             >
-              📄 Artifacts ({artifacts.length})
+              📄 Artifacts ({project ? artifacts.filter(a => a.repository === project).length : artifacts.length})
             </button>
           </div>
 

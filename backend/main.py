@@ -415,8 +415,9 @@ async def run_reindex_background_all():
         
         try:
             start_time = time.time()
-            # Pass None to index all repositories
-            await asyncio.to_thread(index_codebase.walk_and_index, None)
+            # FIX: Pass list of all repository names instead of None
+            all_repo_names = [repo["name"] for repo in REPOSITORIES]
+            await asyncio.to_thread(index_codebase.walk_and_index, all_repo_names)
             index_duration = time.time() - start_time
             print(f"[Reindex] ✅ All repositories indexed in {index_duration:.1f}s")
         finally:
@@ -462,7 +463,6 @@ async def run_reindex_background_all():
         print(f"[Reindex] {error_msg}")
         print(f"[Reindex] Error details: {repr(e)}")
 
-# Reindex endpoints
 @app.post("/reindex-all")
 async def reindex_all_repositories():
     """Start reindex operation for ALL repositories in background and return immediately"""

@@ -373,10 +373,13 @@ export default function Message({
     onArtifactUpdate
 }) {
     const [processedContent, setProcessedContent] = useState(null);
+    const hasProcessedRef = useRef(false);
 
     // Process content when message loads or updates
     useEffect(() => {
-        if (role === 'assistant') {
+        if (role === 'assistant' && !hasProcessedRef.current) {
+            hasProcessedRef.current = true;
+
             const analysis = analyzeContentForArtifacts(content);
 
             // Store any new artifacts with intelligent versioning
@@ -408,10 +411,10 @@ export default function Message({
             }
 
             setProcessedContent(analysis.parts);
-        } else {
+        } else if (role !== 'assistant') {
             setProcessedContent([{ type: 'text', content }]);
         }
-    }, [content, role, messageIndex, onArtifactCreate, artifactStore]);
+    }, [content, role, messageIndex]);
 
     // Determine if we should create a new version vs new artifact
     const shouldCreateNewVersion = (existingArtifact, newArtifact) => {

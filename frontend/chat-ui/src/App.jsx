@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from "react";
+import React, { useState, useRef, useEffect, useCallback } from "react";
 import Message from "./components/Message";
 import ArtifactViewer from "./components/ArtifactViewer";
 import { sendMessage } from "./api/chat";
@@ -30,26 +30,23 @@ export default function App() {
   } = useArtifactStore();
 
   // Handle artifact creation from messages
-  const handleArtifactCreate = (artifact, messageIndex) => {
-    // Check if this is similar to an existing artifact (potential update)
+  const handleArtifactCreate = useCallback((artifact, messageIndex, baseId) => {
     const similarArtifact = artifactStore.findSimilarArtifact(artifact.content, artifact.language, 0.7);
 
     let createdArtifact;
     if (similarArtifact && shouldCreateNewVersion(similarArtifact, artifact)) {
-      // Create new version
       createdArtifact = createArtifact(artifact, messageIndex, similarArtifact.baseId);
     } else {
-      // Create new artifact
       createdArtifact = createArtifact(artifact, messageIndex);
     }
 
-    // Auto-open if it's a significant update
     if (createdArtifact && (artifact.content.length > 500 || createdArtifact.version > 1)) {
       setCurrentArtifact(createdArtifact);
     }
 
     return createdArtifact;
-  };
+  }, [createArtifact]); // Only depend on what actually changes
+
 
   // Determine if we should create a new version vs new artifact
   const shouldCreateNewVersion = (existingArtifact, newArtifact) => {
@@ -66,16 +63,14 @@ export default function App() {
   };
 
   // Handle artifact viewing
-  const handleArtifactView = (artifact) => {
+  const handleArtifactView = useCallback((artifact) => {
     setCurrentArtifact(artifact);
-  };
+  }, []);
 
   // Handle artifact updates
-  const handleArtifactUpdate = (artifact) => {
-    // For now, just view the artifact
-    // Later you could add inline editing capability
+  const handleArtifactUpdate = useCallback((artifact) => {
     setCurrentArtifact(artifact);
-  };
+  }, []);
 
   // Handle mouse down for resizing
   const handleMouseDown = (e) => {

@@ -730,6 +730,107 @@ async def save_conversation_bg(
     except Exception as e:
         print(f"[Chat] Failed to save conversation: {e}")
 
+@app.get("/get-repository-context/{repo_name}")
+async def get_repository_context(repo_name: str):
+    """Get complete repository structure with metadata (not content)"""
+    repo_path = os.path.join(REPO_BASE_PATH, repo_name)
+    
+    if not os.path.exists(repo_path):
+        raise HTTPException(status_code=404, detail="Repository not found")
+    
+    file_map = []
+    total_files = 0
+    
+    for root, dirs, files in os.walk(repo_path):
+        # Skip common ignore directories
+        dirs[:] = [d for d in dirs if d not in {'.git', '__pycache__', 'node_modules', '.venv', 'dist', 'build'}]
+        
+        for file in files:
+            if file.startswith('.'):
+                continue
+                
+            file_path = os.path.join(root, file)
+            relative_path = os.path.relpath(file_path, repo_path)
+            
+            try:
+                # Get file metadata without loading content
+                stat = os.stat(file_path)
+                
+                # Count lines for text files
+                lines = 0
+                file_type = "binary"
+                
+                try:
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        lines = sum(1 for _ in f)
+                    file_type = "text"
+                except (UnicodeDecodeError, Exception):
+                    file_type = "binary"
+                
+                # Determine file category
+                ext = file.split('.')[-1].lower() if '.' in file else ''
+                category = get_file_category(ext)
+                
+                file_map.append({
+                    "path": relative_path,
+                    "name": file,
+                    "size": stat.st_size,
+                    "lines": lines,
+                    "type": file_type,
+                    "category": category,
+                    "extension": ext,
+                    "modified": datetime.fromtimestamp(stat.st_mtime).isoformat()
+                })
+                
+                total_files += 1
+                
+            except Exception as e:
+                print(f"Error processing file {file_path}: {e}")
+                continue
+    
+    # Sort by importance (main files first, then by category)
+    file_map.sort(key=lambda x: (
+        0 if x["name"] in ["main.py", "app.py", "index.js", "App.jsx", "package.json", "requirements.txt", "README.md"] else 1,
+        x["category"],
+        x["path"]
+    ))
+    
+    return {
+        "repository": repo_name,
+        "totalFiles": total_files,
+        "fileMap": file_map,
+        "indexed_at": datetime.utcnow().isoformat(),
+        "categories": get_file_categories_summary(file_map)
+    }
+
+def get_file_category(extension):
+    """Categorize files by extension"""
+    categories = {
+        "python": ["py", "pyx", "pyo", "pyd"],
+        "javascript": ["js", "jsx", "ts", "tsx", "mjs"],
+        "web": ["html", "css", "scss", "sass", "less"],
+        "config": ["json", "yml", "yaml", "toml", "ini", "cfg", "conf"],
+        "docs": ["md", "txt", "rst", "rtf"],
+        "data": ["csv", "sql", "db", "sqlite"],
+        "images": ["png", "jpg", "jpeg", "gif", "svg", "ico"],
+        "other": []
+    }
+    
+    for category, extensions in categories.items():
+        if extension in extensions:
+            return category
+    return "other"
+
+def get_file_categories_summary(file_map):
+    """Get summary of file categories"""
+    categories = {}
+    for file_info in file_map:
+        category = file_info["category"]
+        if category not in categories:
+            categories[category] = 0
+        categories[category] += 1
+    return categories
+
 
 # Main entry point
 if __name__ == "__main__":

@@ -318,7 +318,8 @@ export default function Message({
     artifactStore,
     onArtifactCreate,
     onArtifactView,
-    onArtifactUpdate
+    onArtifactUpdate,
+    artifacts // New prop for artifact_list messages
 }) {
     const [processedContent, setProcessedContent] = useState(null);
     const hasProcessedRef = useRef(false);
@@ -431,6 +432,43 @@ export default function Message({
                     <pre className="whitespace-pre-wrap font-mono text-sm leading-relaxed text-gray-800 overflow-x-auto">
                         {content}
                     </pre>
+                </div>
+            </div>
+        );
+    }
+
+    // NEW: Handle artifact_list role with clickable artifact cards
+    if (role === 'artifact_list') {
+        return (
+            <div className="mb-6">
+                <div className="flex items-start gap-3">
+                    <div className="w-7 h-7 rounded-full bg-gray-700 flex items-center justify-center text-white text-sm font-medium flex-shrink-0">
+                        AI
+                    </div>
+                    <div className="flex-1 pt-1 min-w-0">
+                        <div className="text-sm bg-blue-50 px-4 py-3 rounded-md border-l-4 border-blue-400 mb-4">
+                            <div
+                                className="font-medium text-blue-900"
+                                dangerouslySetInnerHTML={{ __html: formatText(content) }}
+                            />
+                        </div>
+
+                        {/* Render clickable artifact cards */}
+                        <div className="space-y-3">
+                            {(artifacts || []).map((artifact) => (
+                                <ArtifactCard
+                                    key={artifact.id}
+                                    artifact={artifact}
+                                    onViewArtifact={onArtifactView}
+                                    onUpdateArtifact={onArtifactUpdate}
+                                />
+                            ))}
+                        </div>
+
+                        {timestamp && (
+                            <div className="text-xs text-gray-400 mt-3">{timestamp}</div>
+                        )}
+                    </div>
                 </div>
             </div>
         );

@@ -45,20 +45,15 @@ export default function App() {
     }
 
     return createdArtifact;
-  }, [createArtifact]); // Only depend on what actually changes
-
+  }, [createArtifact]);
 
   // Determine if we should create a new version vs new artifact
   const shouldCreateNewVersion = (existingArtifact, newArtifact) => {
-    // Create new version if:
-    // 1. Same language
-    // 2. Similar title/purpose
-    // 3. Content is significantly different but related
     return (
       existingArtifact.language === newArtifact.language &&
       (existingArtifact.title.toLowerCase().includes(newArtifact.title.toLowerCase()) ||
         newArtifact.title.toLowerCase().includes(existingArtifact.title.toLowerCase()) ||
-        existingArtifact.content.length > 200) // Only version substantial artifacts
+        existingArtifact.content.length > 200)
     );
   };
 
@@ -216,15 +211,22 @@ export default function App() {
         setCurrentArtifact(null);
         setMessages([...messages, { role: "system", content: `🗑️ Cleared all artifacts and version history.` }]);
       } else if (command === "/list-artifacts") {
+        // UPDATED: Create clickable artifact cards instead of text list
         const allArtifacts = artifacts;
         if (allArtifacts.length === 0) {
-          setMessages([...messages, { role: "system", content: `📄 No artifacts created yet.` }]);
+          setMessages([...messages, {
+            role: "system",
+            content: `📄 No artifacts created yet.`
+          }]);
         } else {
-          const artifactList = allArtifacts
-            .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-            .map((artifact, idx) => `${idx + 1}. ${artifact.title} (${artifact.language}, v${artifact.version})`)
-            .join('\n');
-          setMessages([...messages, { role: "system", content: `📄 **Created Artifacts (${allArtifacts.length}):**\n${artifactList}` }]);
+          // Create a special message that renders clickable artifact cards
+          const artifactListMessage = {
+            role: "artifact_list",
+            content: `📄 **Created Artifacts (${allArtifacts.length}):**`,
+            artifacts: allArtifacts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
+            timestamp: getTimestamp()
+          };
+          setMessages([...messages, artifactListMessage]);
         }
       } else if (command.startsWith("/remove-attachment")) {
         const [, indexStr] = command.split(" ");
@@ -454,7 +456,7 @@ export default function App() {
 • \`/clear-attachments\` - Remove all attachments
 
 **Artifact Management:**
-• \`/list-artifacts\` - Show all created artifacts
+• \`/list-artifacts\` - Show all created artifacts (clickable!)
 • \`/clear-artifacts\` - Clear all artifacts and history
 
 **Repository Management:**
@@ -710,6 +712,7 @@ export default function App() {
                     onArtifactCreate={handleArtifactCreate}
                     onArtifactView={handleArtifactView}
                     onArtifactUpdate={handleArtifactUpdate}
+                    artifacts={msg.artifacts} // Pass artifacts for artifact_list messages
                   />
                 ))
               )}

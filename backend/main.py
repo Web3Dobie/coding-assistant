@@ -92,7 +92,7 @@ class ChatRequest(BaseModel):
     project: str
     messages: List[Message]
 
-def build_tree_structure(repo_path: str, max_depth: int = 4, ignore_dirs: set = None) -> dict:
+def build_tree_structure(repo_path: str, max_depth: int = 10, ignore_dirs: set = None) -> dict:
     """Build a tree structure of the repository"""
     if ignore_dirs is None:
         ignore_dirs = {'.git', '__pycache__', 'node_modules', '.venv', 'venv', '.env', 

@@ -18,37 +18,15 @@ const vsCodeTheme = {
     border: '#3c3c3c'
 };
 
-// Simple and safe code highlighting - LINT ERROR FREE
-const highlightCode = (code, language) => {
-    // Just escape HTML and apply basic coloring - no complex regex
-    const escaped = code
+// Simple code display without syntax highlighting to avoid HTML entity issues
+const highlightCode = (code) => {
+    // Just return the plain code - no highlighting to avoid HTML issues
+    return code
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
         .replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;')
         .replace(/'/g, '&#x27;');
-
-    // Simple keyword highlighting for common languages
-    if (language === 'python' || language === 'py') {
-        return escaped
-            .replace(/\b(def|class|import|from|return|if|elif|else|for|while|try|except|with|as|async|await)\b/g, '<span style="color: #569cd6; font-weight: bold;">$1</span>')
-            .replace(/\b(True|False|None)\b/g, '<span style="color: #569cd6;">$1</span>')
-            .replace(/\b(\d+)\b/g, '<span style="color: #b5cea8;">$1</span>')
-            .replace(/#.*$/gm, '<span style="color: #6a9955; font-style: italic;">$&</span>');
-    } else if (language === 'javascript' || language === 'js' || language === 'jsx') {
-        return escaped
-            .replace(/\b(const|let|var|function|return|if|else|for|while|class|import|export|from|async|await)\b/g, '<span style="color: #569cd6; font-weight: bold;">$1</span>')
-            .replace(/\b(true|false|null|undefined)\b/g, '<span style="color: #569cd6;">$1</span>')
-            .replace(/\b(\d+)\b/g, '<span style="color: #b5cea8;">$1</span>')
-            .replace(/\/\/.*$/gm, '<span style="color: #6a9955; font-style: italic;">$&</span>');
-    } else if (language === 'bash' || language === 'shell' || language === 'sh') {
-        return escaped
-            .replace(/\b(cd|ls|mkdir|rm|cp|mv|git|npm|docker|curl|wget|chmod|sudo|echo|cat|grep)\b/g, '<span style="color: #569cd6; font-weight: bold;">$1</span>')
-            .replace(/\b(\d+)\b/g, '<span style="color: #b5cea8;">$1</span>')
-            .replace(/#.*$/gm, '<span style="color: #6a9955; font-style: italic;">$&</span>');
-    }
-
-    return escaped;
 };
 
 // Detect if content should create artifacts and where
@@ -170,7 +148,7 @@ const CodeBlock = ({ code, language }) => {
         setTimeout(() => setCopied(false), 2000);
     };
 
-    const highlightedCode = highlightCode(code, language);
+    const highlightedCode = highlightCode(code);
 
     return (
         <div className="my-3 rounded-lg overflow-hidden border border-gray-200">

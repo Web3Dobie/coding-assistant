@@ -18,53 +18,43 @@ const vsCodeTheme = {
     border: '#3c3c3c'
 };
 
-// Enhanced code highlighting for artifact viewer
+// Simple code highlighting for artifact viewer - NO HTML ENTITY ISSUES
 const highlightCode = (code, language) => {
-    let highlighted = code;
+    // Just escape HTML properly and apply basic highlighting
+    let highlighted = code
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#x27;');
 
-    if (language === 'bash' || language === 'shell' || language === 'sh') {
+    // Simple keyword highlighting without complex regex
+    if (language === 'python' || language === 'py') {
         highlighted = highlighted
-            .replace(/^(\$\s*)/gm, '<span style="color: #569cd6; font-weight: bold;">$1</span>')
-            .replace(/\b(cd|ls|mkdir|rm|cp|mv|git|npm|docker|curl|wget|chmod|sudo|echo|cat|grep|find|ps|kill|top)\b/g, '<span style="color: #569cd6; font-weight: bold;">$1</span>')
-            .replace(/(--?[a-zA-Z-]+)/g, '<span style="color: #9cdcfe;">$1</span>')
-            .replace(/(['"`])((?:\\.|(?!\1)[^\\])*?)\1/g, '<span style="color: #ce9178;">$1$2$1</span>')
-            .replace(/#.*$/gm, '<span style="color: #6a9955; font-style: italic;">$&</span>')
-            .replace(/\b(\d+)\b/g, '<span style="color: #b5cea8;">$1</span>');
+            .replace(/\b(def|class|import|from|return|if|elif|else|for|while|try|except|with|as|async|await|lambda|yield)\b/g, '<span style="color: #569cd6; font-weight: bold;">$1</span>')
+            .replace(/\b(True|False|None)\b/g, '<span style="color: #569cd6;">$1</span>')
+            .replace(/\b(\d+(?:\.\d+)?)\b/g, '<span style="color: #b5cea8;">$1</span>')
+            .replace(/#[^\n]*/g, '<span style="color: #6a9955; font-style: italic;">$&</span>');
     } else if (language === 'javascript' || language === 'js' || language === 'jsx') {
         highlighted = highlighted
             .replace(/\b(const|let|var|function|return|if|else|for|while|class|import|export|from|async|await|new|try|catch|finally)\b/g, '<span style="color: #569cd6; font-weight: bold;">$1</span>')
             .replace(/\b(true|false|null|undefined)\b/g, '<span style="color: #569cd6;">$1</span>')
-            .replace(/(['"`])((?:\\.|(?!\1)[^\\])*?)\1/g, '<span style="color: #ce9178;">$1$2$1</span>')
             .replace(/\b(\d+(?:\.\d+)?)\b/g, '<span style="color: #b5cea8;">$1</span>')
-            .replace(/\/\/.*$/gm, '<span style="color: #6a9955; font-style: italic;">$&</span>')
-            .replace(/\/\*[\s\S]*?\*\//g, '<span style="color: #6a9955; font-style: italic;">$&</span>')
-            .replace(/\b([A-Z][a-zA-Z0-9_]*)\b/g, '<span style="color: #4ec9b0;">$1</span>');
-    } else if (language === 'python' || language === 'py') {
+            .replace(/\/\/[^\n]*/g, '<span style="color: #6a9955; font-style: italic;">$&</span>');
+    } else if (language === 'bash' || language === 'shell' || language === 'sh') {
         highlighted = highlighted
-            .replace(/\b(def|class|import|from|return|if|elif|else|for|while|try|except|with|as|async|await|lambda|yield|global|nonlocal)\b/g, '<span style="color: #569cd6; font-weight: bold;">$1</span>')
-            .replace(/\b(True|False|None)\b/g, '<span style="color: #569cd6;">$1</span>')
-            .replace(/(['"`])((?:\\.|(?!\1)[^\\])*?)\1/g, '<span style="color: #ce9178;">$1$2$1</span>')
-            .replace(/\b(\d+(?:\.\d+)?)\b/g, '<span style="color: #b5cea8;">$1</span>')
-            .replace(/#.*$/gm, '<span style="color: #6a9955; font-style: italic;">$&</span>')
-            .replace(/\b([A-Z][a-zA-Z0-9_]*)\b/g, '<span style="color: #4ec9b0;">$1</span>');
+            .replace(/\b(cd|ls|mkdir|rm|cp|mv|git|npm|docker|curl|wget|chmod|sudo|echo|cat|grep|find|ps|kill|top)\b/g, '<span style="color: #569cd6; font-weight: bold;">$1</span>')
+            .replace(/\b(\d+)\b/g, '<span style="color: #b5cea8;">$1</span>')
+            .replace(/#[^\n]*/g, '<span style="color: #6a9955; font-style: italic;">$&</span>');
     } else if (language === 'css') {
         highlighted = highlighted
-            .replace(/([.#]?[a-zA-Z-]+)(\s*{)/g, '<span style="color: #92c5f7;">$1</span>$2')
+            .replace(/([.#]?[a-zA-Z-]+)(\s*\{)/g, '<span style="color: #92c5f7;">$1</span>$2')
             .replace(/([a-zA-Z-]+)(\s*:)/g, '<span style="color: #9cdcfe;">$1</span><span style="color: #cccccc;">$2</span>')
-            .replace(/(['"`])((?:\\.|(?!\1)[^\\])*?)\1/g, '<span style="color: #ce9178;">$1$2$1</span>')
             .replace(/\b(\d+(?:px|em|rem|%|vh|vw)?)\b/g, '<span style="color: #b5cea8;">$1</span>');
-    } else if (language === 'markdown' || language === 'md') {
-        highlighted = highlighted
-            .replace(/^(#{1,6})\s+(.*)$/gm, '<span style="color: #569cd6; font-weight: bold;">$1</span> <span style="color: #dcdcaa; font-weight: bold;">$2</span>')
-            .replace(/\*\*(.*?)\*\*/g, '<span style="color: #dcdcaa; font-weight: bold;">**$1**</span>')
-            .replace(/\*(.*?)\*/g, '<span style="color: #dcdcaa; font-style: italic;">*$1*</span>')
-            .replace(/`([^`]+)`/g, '<span style="color: #ce9178; background-color: #2d2d30; padding: 2px 4px; border-radius: 3px;">$1</span>')
-            .replace(/^\s*[-*+]\s+/gm, '<span style="color: #569cd6;">$&</span>')
-            .replace(/^\s*\d+\.\s+/gm, '<span style="color: #569cd6;">$&</span>');
     } else if (language === 'json') {
         highlighted = highlighted
-            .replace(/"([^"]+)"(\s*:)/g, '<span style="color: #9cdcfe;">"$1"</span>$2')
-            .replace(/:\s*"([^"]+)"/g, ': <span style="color: #ce9178;">"$1"</span>')
+            .replace(/&quot;([^&\n]+)&quot;(\s*:)/g, '<span style="color: #9cdcfe;">&quot;$1&quot;</span>$2')
+            .replace(/:\s*&quot;([^&\n]+)&quot;/g, ': <span style="color: #ce9178;">&quot;$1&quot;</span>')
             .replace(/:\s*(true|false|null)/g, ': <span style="color: #569cd6;">$1</span>')
             .replace(/:\s*(\d+(?:\.\d+)?)/g, ': <span style="color: #b5cea8;">$1</span>');
     }
@@ -219,8 +209,8 @@ export default function ArtifactViewer({
                                         setShowVersionHistory(false);
                                     }}
                                     className={`w-full text-left px-3 py-2 rounded text-xs transition-colors ${selectedVersion.id === version.id
-                                            ? 'bg-blue-100 text-blue-900'
-                                            : 'text-gray-600 hover:bg-gray-50'
+                                        ? 'bg-blue-100 text-blue-900'
+                                        : 'text-gray-600 hover:bg-gray-50'
                                         }`}
                                 >
                                     <div className="flex items-center justify-between">

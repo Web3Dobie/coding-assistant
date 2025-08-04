@@ -20,7 +20,7 @@ const vsCodeTheme = {
 
 // Simple code display without syntax highlighting to avoid HTML entity issues
 const highlightCode = (code) => {
-    // Just return the plain code - no highlighting to avoid HTML issues
+    // Just escape HTML entities and return plain text - no syntax highlighting
     return code
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -148,8 +148,6 @@ const CodeBlock = ({ code, language }) => {
         setTimeout(() => setCopied(false), 2000);
     };
 
-    const highlightedCode = highlightCode(code);
-
     return (
         <div className="my-3 rounded-lg overflow-hidden border border-gray-200">
             <div className="flex items-center justify-between px-3 py-2 bg-gray-50 border-b border-gray-200">
@@ -183,10 +181,10 @@ const CodeBlock = ({ code, language }) => {
                     lineHeight: '1.4'
                 }}
             >
-                <pre
-                    className="whitespace-pre-wrap"
-                    dangerouslySetInnerHTML={{ __html: highlightedCode }}
-                />
+                {/* Use plain text instead of dangerouslySetInnerHTML */}
+                <pre className="whitespace-pre-wrap">
+                    {code}
+                </pre>
             </div>
         </div>
     );

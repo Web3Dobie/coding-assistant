@@ -472,22 +472,27 @@ Currently attached files: ${attachedFiles.length > 0 ? attachedFiles.map(f => f.
               timestamp: getTimestamp()
             }]);
           } else {
-            // Create artifact list message with proper string content
+            // Create simple text list with view commands
             const repoText = project ? ` for ${project}` : '';
-            const artifactList = filteredArtifacts
+            const sortedArtifacts = filteredArtifacts
               .filter(a => a && a.title)
-              .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+              .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0));
+            
+            const artifactList = sortedArtifacts
               .map((artifact, idx) => {
                 const title = artifact.title || 'Untitled';
                 const language = artifact.language || 'Unknown';
                 const created = artifact.createdAt ? new Date(artifact.createdAt).toLocaleDateString() : 'Unknown date';
-                return `${idx + 1}. **${title}** (${language}) - Created: ${created}`;
+                return `${idx + 1}. **${title}** (${language}) - ${created}\n   💡 Type \`/view-artifact ${idx + 1}\` to open this artifact`;
               })
-              .join('\n');
+              .join('\n\n');
+            
+            // Store artifacts for /view-artifact command
+            window.currentArtifactList = sortedArtifacts;
               
             setMessages([...messages, {
               role: "system",
-              content: `📄 **Created Artifacts${repoText} (${filteredArtifacts.length}):**\n\n${artifactList}\n\n*Click on any artifact title above to view it.*`,
+              content: `📄 **Created Artifacts${repoText} (${sortedArtifacts.length}):**\n\n${artifactList}`,
               timestamp: getTimestamp()
             }]);
           }
@@ -716,6 +721,25 @@ Currently attached files: ${attachedFiles.length > 0 ? attachedFiles.map(f => f.
             }
           }, 800);
         }, 500);
+      } else if (command.startsWith("/view-artifact")) {
+        const [, indexStr] = command.split(" ");
+        const index = parseInt(indexStr) - 1;
+        
+        if (window.currentArtifactList && window.currentArtifactList[index]) {
+          const artifact = window.currentArtifactList[index];
+          setCurrentArtifact(artifact);
+          setMessages([...messages, {
+            role: "system",
+            content: `📄 Opened artifact: **${artifact.title}** in side panel.`,
+            timestamp: getTimestamp()
+          }]);
+        } else {
+          setMessages([...messages, {
+            role: "system",
+            content: `❌ Invalid artifact number. Use /list-artifacts to see available artifacts.`,
+            timestamp: getTimestamp()
+          }]);
+        }
       } else if (command === "/help") {
         const helpText = `**Available Commands:**
 
@@ -731,7 +755,8 @@ Currently attached files: ${attachedFiles.length > 0 ? attachedFiles.map(f => f.
 • When enabled, AI can see all files and auto-load them as needed
 
 **Artifact Management:**
-• \`/list-artifacts\` - Show all created artifacts for current repository (clickable!)
+• \`/list-artifacts\` - Show all created artifacts for current repository
+• \`/view-artifact [number]\` - Open specific artifact (use numbers from list)
 • \`/clear-artifacts\` - Clear all artifacts for current repository
 
 **Repository Management:**
@@ -1022,6 +1047,7 @@ Currently attached files: ${attachedFiles.length > 0 ? attachedFiles.map(f => f.
                     onArtifactView={handleArtifactView}
                     onArtifactUpdate={handleArtifactUpdate}
                     artifacts={msg.artifacts} // Pass artifacts for artifact_list messages
+                    artifactButtons={msg.artifactButtons} // Pass artifact buttons for clickable lists
                   />
                 ))
               )}

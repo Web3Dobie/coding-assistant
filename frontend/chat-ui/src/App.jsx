@@ -286,14 +286,74 @@ Currently attached files: ${attachedFiles.length > 0 ? attachedFiles.map(f => f.
     );
   };
 
-  // Handle artifact viewing
+  // Handle artifact viewing with safety checks
   const handleArtifactView = useCallback((artifact) => {
-    setCurrentArtifact(artifact);
+    try {
+      // Ensure artifact has valid content
+      if (artifact && typeof artifact.content === 'string') {
+        setCurrentArtifact(artifact);
+      } else {
+        console.error('Invalid artifact content:', artifact);
+        setMessages(prev => [...prev, {
+          role: "system",
+          content: `❌ Error: Artifact content is corrupted. Cannot display this artifact.`,
+          timestamp: getTimestamp()
+        }]);
+      }
+    } catch (error) {
+      console.error('Error viewing artifact:', error);
+      setMessages(prev => [...prev, {
+        role: "system",
+        content: `❌ Error viewing artifact: ${error.message}`,
+        timestamp: getTimestamp()
+      }]);
+    }
   }, []);
 
   // Handle artifact updates
   const handleArtifactUpdate = useCallback((artifact) => {
-    setCurrentArtifact(artifact);
+    try {
+      if (artifact && typeof artifact.content === 'string') {
+        setCurrentArtifact(artifact);
+      } else {
+        console.error('Invalid updated artifact content:', artifact);
+      }
+    } catch (error) {
+      console.error('Error updating artifact:', error);
+    }
+  }, []);
+
+  // Safe version selection handler
+  const handleVersionSelect = useCallback((version) => {
+    try {
+      if (version && typeof version.content === 'string') {
+        setCurrentArtifact(version);
+      } else {
+        console.error('Invalid version content:', version);
+        // Try to fix the version content if possible
+        if (version && version.content && typeof version.content === 'object') {
+          // If content is an object, try to stringify it
+          const fixedVersion = {
+            ...version,
+            content: JSON.stringify(version.content, null, 2)
+          };
+          setCurrentArtifact(fixedVersion);
+        } else {
+          setMessages(prev => [...prev, {
+            role: "system",
+            content: `❌ Error: Version content is corrupted. Cannot display this version.`,
+            timestamp: getTimestamp()
+          }]);
+        }
+      }
+    } catch (error) {
+      console.error('Error selecting version:', error);
+      setMessages(prev => [...prev, {
+        role: "system",
+        content: `❌ Error switching to version: ${error.message}`,
+        timestamp: getTimestamp()
+      }]);
+    }
   }, []);
 
   // Handle mouse down for resizing
@@ -727,12 +787,22 @@ Currently attached files: ${attachedFiles.length > 0 ? attachedFiles.map(f => f.
         
         if (window.currentArtifactList && window.currentArtifactList[index]) {
           const artifact = window.currentArtifactList[index];
-          setCurrentArtifact(artifact);
-          setMessages([...messages, {
-            role: "system",
-            content: `📄 Opened artifact: **${artifact.title}** in side panel.`,
-            timestamp: getTimestamp()
-          }]);
+          
+          // Validate artifact before viewing
+          if (artifact && typeof artifact.content === 'string') {
+            setCurrentArtifact(artifact);
+            setMessages([...messages, {
+              role: "system",
+              content: `📄 Opened artifact: **${artifact.title}** in side panel.`,
+              timestamp: getTimestamp()
+            }]);
+          } else {
+            setMessages([...messages, {
+              role: "system",
+              content: `❌ Error: Artifact content is corrupted. Cannot display artifact "${artifact?.title || 'Unknown'}".`,
+              timestamp: getTimestamp()
+            }]);
+          }
         } else {
           setMessages([...messages, {
             role: "system",
@@ -1121,8 +1191,17 @@ Currently attached files: ${attachedFiles.length > 0 ? attachedFiles.map(f => f.
             <ArtifactViewer
               artifact={currentArtifact}
               onClose={() => setCurrentArtifact(null)}
-              onVersionSelect={(version) => setCurrentArtifact(version)}
-              artifactVersions={getArtifactVersions(currentArtifact.baseId)}
+              onVersionSelect={handleVersionSelect}
+              artifactVersions={(() => {
+                try {
+                  const versions = getArtifactVersions(currentArtifact.baseId);
+                  // Filter out versions with invalid content
+                  return versions.filter(v => v && typeof v.content === 'string');
+                } catch (error) {
+                  console.error('Error getting artifact versions:', error);
+                  return [];
+                }
+              })()}
             />
           </div>
         )}

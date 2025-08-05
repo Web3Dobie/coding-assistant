@@ -53,36 +53,36 @@ export default function App() {
   // Enable full repository context
   const enableRepositoryContext = async () => {
     if (!project) return;
-
-    setMessages(prev => [...prev, {
-      role: "system",
+    
+    setMessages(prev => [...prev, { 
+      role: "system", 
       content: `🔄 Indexing ${project} repository for full context mode...`,
       timestamp: getTimestamp()
     }]);
 
     const contextData = await getRepositoryContext(project);
-
+    
     if (contextData) {
       setRepositoryContext({
         enabled: true,
         fileMap: contextData.fileMap,
         lastIndexed: new Date().toISOString()
       });
-
-      setMessages(prev => [...prev,
-      {
-        role: "system",
-        content: `✅ Repository context enabled! AI can now see ${contextData.totalFiles} files and will auto-load them as needed.`,
-        timestamp: getTimestamp()
-      }
+      
+      setMessages(prev => [...prev, 
+        { 
+          role: "system", 
+          content: `✅ Repository context enabled! AI can now see ${contextData.totalFiles} files and will auto-load them as needed.`,
+          timestamp: getTimestamp()
+        }
       ]);
     } else {
       setMessages(prev => [...prev,
-      {
-        role: "system",
-        content: `❌ Failed to enable repository context mode.`,
-        timestamp: getTimestamp()
-      }
+        { 
+          role: "system", 
+          content: `❌ Failed to enable repository context mode.`,
+          timestamp: getTimestamp()
+        }
       ]);
     }
   };
@@ -94,9 +94,9 @@ export default function App() {
       fileMap: null,
       lastIndexed: null
     });
-
-    setMessages(prev => [...prev, {
-      role: "system",
+    
+    setMessages(prev => [...prev, { 
+      role: "system", 
       content: `🔄 Repository context mode disabled. AI will only see manually attached files.`,
       timestamp: getTimestamp()
     }]);
@@ -110,44 +110,44 @@ export default function App() {
       /\*\*([^*]+\.(py|js|jsx|ts|tsx|json|yml|yaml|md|txt|sql|css|html))\*\*/g,
       /(?:file:|path:|see:|check:|examine:)\s*([^\s]+\.(py|js|jsx|ts|tsx|json|yml|yaml|md|txt|sql|css|html))/gi
     ];
-
+    
     const requestedFiles = new Set();
-
+    
     patterns.forEach(pattern => {
       let match;
       while ((match = pattern.exec(aiResponse)) !== null) {
         requestedFiles.add(match[1]);
       }
     });
-
+    
     return Array.from(requestedFiles);
   };
 
   // Auto-attach files referenced by AI
   const autoAttachReferencedFiles = async (aiResponse) => {
     if (!repositoryContext.enabled) return;
-
+    
     const requestedFiles = extractFileRequests(aiResponse);
     const filesToAttach = [];
-
+    
     for (const filePath of requestedFiles) {
       // Check if file exists in repository and isn't already attached
-      const fileExists = repositoryContext.fileMap?.some(file =>
+      const fileExists = repositoryContext.fileMap?.some(file => 
         file.path.endsWith(filePath) || file.path === filePath
       );
-
-      const alreadyAttached = attachedFiles.some(attached =>
+      
+      const alreadyAttached = attachedFiles.some(attached => 
         attached.path.includes(filePath)
       );
-
+      
       if (fileExists && !alreadyAttached) {
         filesToAttach.push(filePath);
       }
     }
-
+    
     if (filesToAttach.length > 0) {
       await attachMultipleFiles(filesToAttach);
-
+      
       setMessages(prev => [...prev, {
         role: "system",
         content: `🤖 Auto-attached ${filesToAttach.length} files referenced by AI: ${filesToAttach.join(', ')}`,
@@ -159,12 +159,12 @@ export default function App() {
   // Attach multiple files
   const attachMultipleFiles = async (filePaths) => {
     const newAttachments = [];
-
+    
     for (const filePath of filePaths) {
       try {
         // Handle relative paths
         const fullPath = filePath.startsWith(project) ? filePath : `${project}/${filePath}`;
-
+        
         const response = await fetch(`${API_BASE_URL}/get-file?file_path=${encodeURIComponent(fullPath)}`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -172,7 +172,7 @@ export default function App() {
 
         if (response.ok) {
           const data = await response.json();
-
+          
           // Check if not already attached
           if (!attachedFiles.some(f => f.path === data.file_path)) {
             newAttachments.push({
@@ -187,7 +187,7 @@ export default function App() {
         console.warn(`Failed to auto-attach ${filePath}:`, error);
       }
     }
-
+    
     if (newAttachments.length > 0) {
       setAttachedFiles(prev => [...prev, ...newAttachments]);
     }
@@ -198,15 +198,15 @@ export default function App() {
     if (!repositoryContext.enabled || !repositoryContext.fileMap) {
       return null;
     }
-
+    
     const fileList = repositoryContext.fileMap
       .slice(0, 50) // Limit to prevent token overflow
       .map(file => `- ${file.path} (${file.type}, ${file.lines} lines)`)
       .join('\n');
-
+    
     const totalFiles = repositoryContext.fileMap.length;
     const truncated = totalFiles > 50 ? `\n... and ${totalFiles - 50} more files` : '';
-
+    
     return {
       role: "system",
       content: `🗂️ REPOSITORY CONTEXT - ${project}
@@ -227,10 +227,11 @@ Currently attached files: ${attachedFiles.length > 0 ? attachedFiles.map(f => f.
     <div className="flex items-center gap-2">
       <button
         onClick={repositoryContext.enabled ? disableRepositoryContext : enableRepositoryContext}
-        className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${repositoryContext.enabled
+        className={`px-4 py-2 rounded-lg font-medium text-sm transition-colors ${
+          repositoryContext.enabled
             ? 'bg-green-100 text-green-800 hover:bg-green-200'
             : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
-          }`}
+        }`}
         disabled={!project}
       >
         {repositoryContext.enabled ? '🗂️ Context: ON' : '🗂️ Context: OFF'}
@@ -245,26 +246,34 @@ Currently attached files: ${attachedFiles.length > 0 ? attachedFiles.map(f => f.
 
   // Handle artifact creation from messages
   const handleArtifactCreate = useCallback((artifact, messageIndex, baseId) => {
-    const similarArtifact = artifactStore.findSimilarArtifact(artifact.content, artifact.language, 0.7);
+    try {
+      const similarArtifact = artifactStore.findSimilarArtifact(artifact.content, artifact.language, 0.7);
 
-    let createdArtifact;
-    if (similarArtifact && shouldCreateNewVersion(similarArtifact, artifact)) {
-      createdArtifact = createArtifact(artifact, messageIndex, similarArtifact.baseId);
-    } else {
-      createdArtifact = createArtifact(artifact, messageIndex);
+      let createdArtifact;
+      if (similarArtifact && shouldCreateNewVersion(similarArtifact, artifact)) {
+        createdArtifact = createArtifact(artifact, messageIndex, similarArtifact.baseId);
+      } else {
+        createdArtifact = createArtifact(artifact, messageIndex);
+      }
+
+      // Add repository context to artifact safely
+      if (createdArtifact && project) {
+        createdArtifact.repository = project;
+        // Only update if updateArtifact method exists
+        if (typeof artifactStore.updateArtifact === 'function') {
+          artifactStore.updateArtifact(createdArtifact.id, { repository: project });
+        }
+      }
+
+      if (createdArtifact && (artifact.content.length > 500 || createdArtifact.version > 1)) {
+        setCurrentArtifact(createdArtifact);
+      }
+
+      return createdArtifact;
+    } catch (error) {
+      console.error('Error creating artifact:', error);
+      return null;
     }
-
-    // Add repository context to artifact
-    if (createdArtifact && project) {
-      createdArtifact.repository = project;
-      artifactStore.updateArtifact(createdArtifact.id, { repository: project });
-    }
-
-    if (createdArtifact && (artifact.content.length > 500 || createdArtifact.version > 1)) {
-      setCurrentArtifact(createdArtifact);
-    }
-
-    return createdArtifact;
   }, [createArtifact, project]);
 
   // Determine if we should create a new version vs new artifact
@@ -427,42 +436,62 @@ Currently attached files: ${attachedFiles.length > 0 ? attachedFiles.map(f => f.
         setAttachedFiles([]);
         setMessages([...messages, { role: "system", content: `🗑️ Cleared all attached files.` }]);
       } else if (command === "/clear-artifacts") {
-        if (project) {
-          // Clear only artifacts for current repository
-          const currentRepoArtifacts = artifacts.filter(a => a.repository === project);
-          currentRepoArtifacts.forEach(artifact => {
-            artifactStore.deleteArtifact(artifact.id);
-          });
-          setCurrentArtifact(null);
-          setMessages([...messages, { role: "system", content: `🗑️ Cleared all artifacts for ${project} repository.` }]);
-        } else {
-          // Clear all artifacts if no repository selected
-          artifactStore.clear();
-          setCurrentArtifact(null);
-          setMessages([...messages, { role: "system", content: `🗑️ Cleared all artifacts and version history.` }]);
+        try {
+          if (project) {
+            // Clear only artifacts for current repository
+            const currentRepoArtifacts = Array.isArray(artifacts) ? artifacts.filter(a => a && a.repository === project) : [];
+            currentRepoArtifacts.forEach(artifact => {
+              if (artifact && artifact.id && typeof artifactStore.deleteArtifact === 'function') {
+                artifactStore.deleteArtifact(artifact.id);
+              }
+            });
+            setCurrentArtifact(null);
+            setMessages([...messages, { role: "system", content: `🗑️ Cleared ${currentRepoArtifacts.length} artifacts for ${project} repository.` }]);
+          } else {
+            // Clear all artifacts if no repository selected
+            artifactStore.clear();
+            setCurrentArtifact(null);
+            setMessages([...messages, { role: "system", content: `🗑️ Cleared all artifacts and version history.` }]);
+          }
+        } catch (error) {
+          console.error('Error clearing artifacts:', error);
+          setMessages([...messages, { role: "system", content: `❌ Error clearing artifacts. Please try again.` }]);
         }
       } else if (command === "/list-artifacts") {
-        // Filter artifacts by current repository
-        const filteredArtifacts = project
-          ? artifacts.filter(a => a.repository === project)
-          : artifacts;
-
-        if (filteredArtifacts.length === 0) {
-          const repoText = project ? ` for ${project}` : '';
+        try {
+          // Safely filter artifacts by current repository
+          const allArtifacts = Array.isArray(artifacts) ? artifacts : [];
+          const filteredArtifacts = project 
+            ? allArtifacts.filter(a => a && a.repository === project)
+            : allArtifacts;
+            
+          if (filteredArtifacts.length === 0) {
+            const repoText = project ? ` for ${project}` : '';
+            setMessages([...messages, {
+              role: "system",
+              content: `📄 No artifacts created yet${repoText}.`
+            }]);
+          } else {
+            // Create a special message that renders clickable artifact cards
+            const repoText = project ? ` for ${project}` : '';
+            const sortedArtifacts = filteredArtifacts
+              .filter(a => a && a.createdAt) // Ensure valid artifacts
+              .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+              
+            const artifactListMessage = {
+              role: "artifact_list",
+              content: `📄 **Created Artifacts${repoText} (${sortedArtifacts.length}):**`,
+              artifacts: sortedArtifacts,
+              timestamp: getTimestamp()
+            };
+            setMessages([...messages, artifactListMessage]);
+          }
+        } catch (error) {
+          console.error('Error listing artifacts:', error);
           setMessages([...messages, {
             role: "system",
-            content: `📄 No artifacts created yet${repoText}.`
+            content: `❌ Error loading artifacts. Please try again.`
           }]);
-        } else {
-          // Create a special message that renders clickable artifact cards
-          const repoText = project ? ` for ${project}` : '';
-          const artifactListMessage = {
-            role: "artifact_list",
-            content: `📄 **Created Artifacts${repoText} (${filteredArtifacts.length}):**`,
-            artifacts: filteredArtifacts.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
-            timestamp: getTimestamp()
-          };
-          setMessages([...messages, artifactListMessage]);
         }
       } else if (command.startsWith("/remove-attachment")) {
         const [, indexStr] = command.split(" ");
@@ -793,18 +822,18 @@ Currently attached files: ${attachedFiles.length > 0 ? attachedFiles.map(f => f.
         }
 
         const assistantReply = await sendMessage(project, enhancedMessages);
-
+        
         const assistantMessage = {
           role: "assistant",
           content: assistantReply,
           timestamp: getTimestamp(),
         };
-
+        
         setMessages([...newMessages, assistantMessage]);
-
+        
         // Auto-attach files referenced in AI response
         await autoAttachReferencedFiles(assistantReply);
-
+        
       } catch (error) {
         setMessages([
           ...newMessages,
@@ -888,7 +917,15 @@ Currently attached files: ${attachedFiles.length > 0 ? attachedFiles.map(f => f.
               onClick={() => setInput('/list-artifacts')}
               className="px-5 py-2.5 bg-white hover:bg-gray-50 rounded-lg text-gray-700 transition-colors border border-gray-300 font-medium text-base shadow-sm"
             >
-              📄 Artifacts ({project ? artifacts.filter(a => a.repository === project).length : artifacts.length})
+              📄 Artifacts ({(() => {
+                try {
+                  const allArtifacts = Array.isArray(artifacts) ? artifacts : [];
+                  return project ? allArtifacts.filter(a => a && a.repository === project).length : allArtifacts.length;
+                } catch (error) {
+                  console.error('Error counting artifacts:', error);
+                  return 0;
+                }
+              })()})
             </button>
           </div>
 

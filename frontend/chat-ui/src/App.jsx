@@ -104,11 +104,16 @@ export default function App() {
 
   // Extract file requests from AI response
   const extractFileRequests = (aiResponse) => {
+    if (!repositoryContext.enabled || !repositoryContext.fileMap) {
+      return []; // Don't extract files if context is disabled
+    }
+    
     // Look for various patterns of file references
     const patterns = [
-      /`([^`]+\.(py|js|jsx|ts|tsx|json|yml|yaml|md|txt|sql|css|html))`/g,
-      /\*\*([^*]+\.(py|js|jsx|ts|tsx|json|yml|yaml|md|txt|sql|css|html))\*\*/g,
-      /(?:file:|path:|see:|check:|examine:)\s*([^\s]+\.(py|js|jsx|ts|tsx|json|yml|yaml|md|txt|sql|css|html))/gi
+      /`([^`]+\.(py|js|jsx|ts|tsx|json|yml|yaml|md|txt|sql|css|html|sh|env|cfg|ini|toml))`/g,
+      /\*\*([^*]+\.(py|js|jsx|ts|tsx|json|yml|yaml|md|txt|sql|css|html|sh|env|cfg|ini|toml))\*\*/g,
+      /(?:file:|path:|see:|check:|examine:|look at:|in |from )\s*([^\s\.,]+\.(py|js|jsx|ts|tsx|json|yml|yaml|md|txt|sql|css|html|sh|env|cfg|ini|toml))/gi,
+      /([a-zA-Z_][a-zA-Z0-9_]*\.(py|js|jsx|ts|tsx|json|yml|yaml|md|txt|sql|css|html|sh|env|cfg|ini|toml))/g
     ];
     
     const requestedFiles = new Set();
@@ -116,7 +121,22 @@ export default function App() {
     patterns.forEach(pattern => {
       let match;
       while ((match = pattern.exec(aiResponse)) !== null) {
-        requestedFiles.add(match[1]);
+        const fileName = match[1];
+        
+        // Find matching files in the repository context
+        const matchingFiles = repositoryContext.fileMap.filter(file => 
+          file.path.endsWith(fileName) || 
+          file.path === fileName ||
+          file.path.includes(`/${fileName}`)
+        );
+        
+        // Add the most likely match (shortest path or exact match)
+        if (matchingFiles.length > 0) {
+          const bestMatch = matchingFiles.reduce((best, current) => 
+            current.path.length < best.path.length ? current : best
+          );
+          requestedFiles.add(bestMatch.path);
+        }
       }
     });
     
@@ -131,26 +151,24 @@ export default function App() {
     const filesToAttach = [];
     
     for (const filePath of requestedFiles) {
-      // Check if file exists in repository and isn't already attached
-      const fileExists = repositoryContext.fileMap?.some(file => 
-        file.path.endsWith(filePath) || file.path === filePath
-      );
-      
+      // Check if file isn't already attached (compare by filename, not full path)
+      const fileName = filePath.split('/').pop();
       const alreadyAttached = attachedFiles.some(attached => 
-        attached.path.includes(filePath)
+        attached.path.includes(fileName) || attached.path.endsWith(filePath)
       );
       
-      if (fileExists && !alreadyAttached) {
+      if (!alreadyAttached) {
         filesToAttach.push(filePath);
       }
     }
     
     if (filesToAttach.length > 0) {
+      console.log('Auto-attaching files:', filesToAttach);
       await attachMultipleFiles(filesToAttach);
       
       setMessages(prev => [...prev, {
         role: "system",
-        content: `🤖 Auto-attached ${filesToAttach.length} files referenced by AI: ${filesToAttach.join(', ')}`,
+        content: `🤖 Auto-attached ${filesToAttach.length} files referenced by AI: ${filesToAttach.map(f => f.split('/').pop()).join(', ')}`,
         timestamp: getTimestamp()
       }]);
     }
@@ -162,8 +180,30 @@ export default function App() {
     
     for (const filePath of filePaths) {
       try {
-        // Handle relative paths
-        const fullPath = filePath.startsWith(project) ? filePath : `${project}/${filePath}`;
+        // Smart path construction based on repository context
+        let fullPath;
+        
+        if (repositoryContext.enabled && repositoryContext.fileMap) {
+          // When context is enabled, find the exact path from the file map
+          const matchingFile = repositoryContext.fileMap.find(file => 
+            file.path.endsWith(filePath) || 
+            file.path === filePath ||
+            file.path.includes(filePath)
+          );
+          
+          if (matchingFile) {
+            // Use the exact path from the repository context
+            fullPath = `${project}/${matchingFile.path}`;
+          } else {
+            // Fallback to simple path construction
+            fullPath = filePath.startsWith(project) ? filePath : `${project}/${filePath}`;
+          }
+        } else {
+          // Original path construction when context is disabled
+          fullPath = filePath.startsWith(project) ? filePath : `${project}/${filePath}`;
+        }
+        
+        console.log(`Attempting to fetch file: ${fullPath}`);
         
         const response = await fetch(`${API_BASE_URL}/get-file?file_path=${encodeURIComponent(fullPath)}`, {
           method: "POST",
@@ -182,6 +222,8 @@ export default function App() {
               autoAttached: true
             });
           }
+        } else {
+          console.warn(`Failed to auto-attach ${filePath}: ${response.status} ${response.statusText}`);
         }
       } catch (error) {
         console.warn(`Failed to auto-attach ${filePath}:`, error);

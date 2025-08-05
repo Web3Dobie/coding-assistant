@@ -459,7 +459,6 @@ Currently attached files: ${attachedFiles.length > 0 ? attachedFiles.map(f => f.
         }
       } else if (command === "/list-artifacts") {
         try {
-          // Safely filter artifacts by current repository
           const allArtifacts = Array.isArray(artifacts) ? artifacts : [];
           const filteredArtifacts = project 
             ? allArtifacts.filter(a => a && a.repository === project)
@@ -469,28 +468,35 @@ Currently attached files: ${attachedFiles.length > 0 ? attachedFiles.map(f => f.
             const repoText = project ? ` for ${project}` : '';
             setMessages([...messages, {
               role: "system",
-              content: `📄 No artifacts created yet${repoText}.`
+              content: `📄 No artifacts created yet${repoText}.`,
+              timestamp: getTimestamp()
             }]);
           } else {
-            // Create a special message that renders clickable artifact cards
+            // Create artifact list message with proper string content
             const repoText = project ? ` for ${project}` : '';
-            const sortedArtifacts = filteredArtifacts
-              .filter(a => a && a.createdAt) // Ensure valid artifacts
-              .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+            const artifactList = filteredArtifacts
+              .filter(a => a && a.title)
+              .sort((a, b) => new Date(b.createdAt || 0) - new Date(a.createdAt || 0))
+              .map((artifact, idx) => {
+                const title = artifact.title || 'Untitled';
+                const language = artifact.language || 'Unknown';
+                const created = artifact.createdAt ? new Date(artifact.createdAt).toLocaleDateString() : 'Unknown date';
+                return `${idx + 1}. **${title}** (${language}) - Created: ${created}`;
+              })
+              .join('\n');
               
-            const artifactListMessage = {
-              role: "artifact_list",
-              content: `📄 **Created Artifacts${repoText} (${sortedArtifacts.length}):**`,
-              artifacts: sortedArtifacts,
+            setMessages([...messages, {
+              role: "system",
+              content: `📄 **Created Artifacts${repoText} (${filteredArtifacts.length}):**\n\n${artifactList}\n\n*Click on any artifact title above to view it.*`,
               timestamp: getTimestamp()
-            };
-            setMessages([...messages, artifactListMessage]);
+            }]);
           }
         } catch (error) {
           console.error('Error listing artifacts:', error);
           setMessages([...messages, {
             role: "system",
-            content: `❌ Error loading artifacts. Please try again.`
+            content: `❌ Error loading artifacts: ${error.message}`,
+            timestamp: getTimestamp()
           }]);
         }
       } else if (command.startsWith("/remove-attachment")) {
